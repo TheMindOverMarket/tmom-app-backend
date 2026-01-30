@@ -10,6 +10,13 @@ broadcaster = MarketStateBroadcaster()
 app.add_event_handler("startup", on_startup)
 app.add_event_handler("shutdown", on_shutdown)
 
+@app.get("/")
+def root():
+    return {
+        "status": "ok",
+        "service": "market_state_aggregator",
+        "note": "service running, check /ws/market-state for stream"
+    }
 
 @app.get("/health")
 async def health() -> dict:
