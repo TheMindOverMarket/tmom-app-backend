@@ -22,6 +22,9 @@ class AlpacaCryptoStream:
         self._running = True
 
     async def start(self) -> None:
+        # Import inside the function to avoid circular dependency
+        from app.main import broadcaster
+
         print(f"AlpacaCryptoStream.start() called")
         print(f"Attempting to connect to: {ALPACA_CRYPTO_WS_URL}")
 
@@ -32,19 +35,7 @@ class AlpacaCryptoStream:
             await self._subscribe()
 
             while self._running:
-                # print("Waiting for message...") 
-                # Reduced logging verbosity slightly for "Waiting..." to avoid spam if high frequency, 
-                # but instruction says "Emit a simplified canonical ... payload via print()". 
-                # I will remove the "Waiting for message..." spam if quotes are frequent, 
-                # but keep raw message print if needed.
-                # Actually, strictly following "Update Message Handling Logic", I should focus on the event emission.
-                # "Emit the canonical market state payload via print()"
-                
                 message = await ws.recv()
-                # print(f"Raw crypto message received: {message}") # Leaving this out or optional? 
-                # The instructions say: "Generates current_time ... Emit ... via print()".
-                # They don't explicitly forbid raw logging, but "This file must not include ... Additional metrics".
-                # I'll enable raw logging just in case for debugging but the requirement is to print the payload.
                 
                 try:
                     data = json.loads(message)
@@ -61,7 +52,9 @@ class AlpacaCryptoStream:
                                         "current_time": datetime.utcnow().isoformat() + "Z",
                                         "price": mid_price
                                     }
-                                    print(json.dumps(event))
+                                    event_json = json.dumps(event)
+                                    print(event_json)
+                                    await broadcaster.broadcast(event_json)
                 except Exception as e:
                     print(f"Error processing message: {e}")
 
