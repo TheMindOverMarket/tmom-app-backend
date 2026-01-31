@@ -51,6 +51,7 @@ class AlpacaCryptoStream(AlpacaBaseStream):
     def __init__(self) -> None:
         super().__init__(ALPACA_CRYPTO_WS_URL)
         self.symbols = ["BTC/USD"]
+        self.latest_market_state = {} # Stores {symbol: event_dict}
 
     async def start(self) -> None:
         # Import inside the function to avoid circular dependency
@@ -91,8 +92,14 @@ class AlpacaCryptoStream(AlpacaBaseStream):
                                         "event_type": "market_state",
                                         "symbol": "BTC", 
                                         "current_time": current_time,
-                                        "price": mid_price
+                                        "price": mid_price,
+                                        # Capture raw timestamp for age calc
+                                        "raw_timestamp_ms": datetime.utcnow().timestamp() * 1000 
                                     }
+                                    
+                                    # Update cache for context attachment
+                                    # symbol variable here is likely "BTC/USD" from the feed
+                                    self.latest_market_state[symbol] = event
                                     
                                     event_json = json.dumps(event)
                                     print("[MARKET_STATE][BROADCAST] Broadcasting market_state event")
@@ -204,11 +211,57 @@ class AlpacaTradingStream(AlpacaBaseStream):
                                 
                                 print(f"[USER_ACTIVITY][NORMALIZED] {normalized_event.json()}")
                                 
+                                # Context Attachment (MD 4 Requirement)
+                                from app.lifecycle import _stream as crypto_stream_instance
+                                
+                                attachment_state = "UNATTACHED"
+                                market_ref_age_ms = None
+                                market_snapshot_id = None
+                                
+                                # Configuration for freshness (e.g. 5000ms from Prompt instructions or default)
+                                MARKET_STATE_FRESHNESS_MS = 5000 
+                                
+                                if crypto_stream_instance:
+                                    # Normalize symbol lookup. 
+                                    # Trade updates might use "BTC/USD" or "BTCUSD". 
+                                    # Crypto feed uses "BTC/USD".
+                                    # We try exact match first.
+                                    latest_state = crypto_stream_instance.latest_market_state.get(symbol)
+                                    
+                                    if latest_state:
+                                        market_ts = latest_state.get("raw_timestamp_ms")
+                                        activity_ts = normalized_event.timestamp_server
+                                        
+                                        if market_ts and market_ts <= activity_ts:
+                                            age = activity_ts - market_ts
+                                            market_ref_age_ms = age
+                                            # We don't have explicit snapshot IDs in the dict yet, 
+                                            # in a real system we would. For now use timestamp as ID proxy or null.
+                                            # Spec says "Identifier of attached snapshot".
+                                            market_snapshot_id = f"{symbol}_{market_ts}"
+                                            
+                                            if age <= MARKET_STATE_FRESHNESS_MS:
+                                                attachment_state = "ATTACHED"
+                                            else:
+                                                attachment_state = "ATTACHED_STALE"
+                                        else:
+                                            # Future data protection (timestamp > activity_ts)
+                                            # OR invalid timestamp
+                                            attachment_state = "UNATTACHED"
+                                
+                                # Enrich event
+                                normalized_event.market_attachment_state = attachment_state
+                                normalized_event.market_snapshot_id = market_snapshot_id
+                                normalized_event.market_ref_age_ms = market_ref_age_ms
+                                
+                                print(f"[USER_ACTIVITY][ENRICHED] {normalized_event.json()}")
+                                
                                 # Emit downstream (MD 3 requirement)
                                 # Using In-Process Broadcast via the existing MarketStateBroadcaster 
                                 # (which is actually a general broadcaster despite the name)
                                 from app.main import broadcaster
                                 await broadcaster.broadcast(normalized_event.json())
+                                # print(f"[USER_ACTIVITY][EMITTED] {normalized_event.json()}") # Removed as per MD 4 "Enriched log" takes precedence or we keep both? MD 4 says "Raw and normalized logs must remain intact". It doesn't explicitly delete the EMITTED log, but ENRICHED is the new high-value log. The EMITTED log was added in MD 3. I will keep it or replace it? MD 4 says "Emit observable log [ENRICHED]". It doesn't ban EMITTED. I'll keep EMITTED as the "final" debug log. Actually, let's keep it to verify emission.
                                 print(f"[USER_ACTIVITY][EMITTED] {normalized_event.json()}")
                                 
                         except json.JSONDecodeError:

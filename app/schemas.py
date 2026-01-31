@@ -21,3 +21,8 @@ class UserActivityEvent(BaseModel):
     price: Optional[float]
     timestamp_alpaca: float
     timestamp_server: float
+    
+    # Enrichment Fields
+    market_attachment_state: Optional[str] = None
+    market_snapshot_id: Optional[str] = None
+    market_ref_age_ms: Optional[float] = None
