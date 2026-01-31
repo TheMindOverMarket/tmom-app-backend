@@ -8,20 +8,49 @@ from datetime import datetime
 logger = logging.getLogger(__name__)
 
 ALPACA_CRYPTO_WS_URL = "wss://stream.data.alpaca.markets/v1beta3/crypto/us"
+ALPACA_TRADING_WS_URL = "wss://paper-api.alpaca.markets/stream"
 
 
-class AlpacaCryptoStream:
-    def __init__(self) -> None:
+class AlpacaBaseStream:
+    def __init__(self, url: str) -> None:
         self._api_key = os.getenv("ALPACA_API_KEY")
         self._api_secret = os.getenv("ALPACA_API_SECRET")
-        self.ws_url = ALPACA_CRYPTO_WS_URL
-        self.symbols = ["BTC/USD"]
+        self.ws_url = url
+        self._ws = None
+        self._running = True
 
         if not self._api_key or not self._api_secret:
             raise RuntimeError("Missing Alpaca API credentials")
 
-        self._ws = None
-        self._running = True
+    async def connect(self):
+        return websockets.connect(
+            self.ws_url,
+            ping_interval=20,
+            ping_timeout=20,
+            open_timeout=10,
+            close_timeout=5,
+            max_queue=None,
+        )
+
+    async def authenticate(self) -> None:
+        auth_message = {
+            "action": "auth",
+            "key": self._api_key,
+            "secret": self._api_secret
+        }
+        await self._ws.send(json.dumps(auth_message))
+        print(f"[{self.__class__.__name__}][AUTH_SENT] Auth message sent")
+
+    async def stop(self) -> None:
+        self._running = False
+        if self._ws:
+            await self._ws.close()
+
+
+class AlpacaCryptoStream(AlpacaBaseStream):
+    def __init__(self) -> None:
+        super().__init__(ALPACA_CRYPTO_WS_URL)
+        self.symbols = ["BTC/USD"]
 
     async def start(self) -> None:
         # Import inside the function to avoid circular dependency
@@ -30,17 +59,10 @@ class AlpacaCryptoStream:
         print("[ALPACA][START] AlpacaCryptoStream.start() invoked")
         print(f"[ALPACA][CONNECT] Connecting to {self.ws_url}")
 
-        async with websockets.connect(
-            self.ws_url,
-            ping_interval=20,
-            ping_timeout=20,
-            open_timeout=10,
-            close_timeout=5,
-            max_queue=None,
-        ) as ws:
+        async with await self.connect() as ws:
             print("[ALPACA][CONNECTED] WebSocket connection established")
             self._ws = ws
-            await self._authenticate()
+            await self.authenticate()
             await self._subscribe()
 
             while self._running:
@@ -67,16 +89,7 @@ class AlpacaCryptoStream:
                                     
                                     event = {
                                         "event_type": "market_state",
-                                        "symbol": "BTC", # Keep consistent with prompt instructions or use symbol? 
-                                        # Prompt 03b says "symbol": "BTC" explicitly. 
-                                        # But here we get "BTC/USD".
-                                        # I'll stick to "BTC" as per previous agreement/code if possible, or just use the obj["S"] if I want to be generic
-                                        # But let's check previous implementation: `event = { ... "symbol": "BTC", ... }`
-                                        # I will keep "BTC" hardcoded for consistency with previous step unless instructed otherwise.
-                                        # Wait, 06 instruction says: `print(f"[MARKET_STATE][BUILD] symbol={symbol} ...")`
-                                        # So assume I use `symbol` from obj which is likely "BTC/USD".
-                                        # But the event schema in 03b said `symbol: "BTC"`.
-                                        # I will follow 03b for the event payload, but use the `symbol` variable for the log.
+                                        "symbol": "BTC", 
                                         "current_time": current_time,
                                         "price": mid_price
                                     }
@@ -89,20 +102,6 @@ class AlpacaCryptoStream:
                 except Exception as e:
                     print(f"Error processing message: {e}")
 
-    async def stop(self) -> None:
-        self._running = False
-        if self._ws:
-            await self._ws.close()
-
-    async def _authenticate(self) -> None:
-        auth_message = {
-            "action": "auth",
-            "key": self._api_key,
-            "secret": self._api_secret
-        }
-        await self._ws.send(json.dumps(auth_message))
-        print("[ALPACA][AUTH_SENT] Auth message sent")
-
     async def _subscribe(self) -> None:
         subscribe_message = {
             "action": "subscribe",
@@ -110,3 +109,39 @@ class AlpacaCryptoStream:
         }
         await self._ws.send(json.dumps(subscribe_message))
         print(f"[ALPACA][SUBSCRIBE_SENT] Subscribed to quotes: {self.symbols}")
+
+
+class AlpacaTradingStream(AlpacaBaseStream):
+    def __init__(self) -> None:
+        super().__init__(ALPACA_TRADING_WS_URL)
+
+    async def start(self) -> None:
+        print("[ALPACA_TRADING][START] AlpacaTradingStream.start() invoked")
+        print(f"[ALPACA_TRADING][CONNECT] Connecting to {self.ws_url}")
+
+        try:
+            async with await self.connect() as ws:
+                print("[ALPACA_TRADING][CONNECTED] WebSocket connection established")
+                self._ws = ws
+                await self.authenticate()
+                await self._subscribe()
+
+                while self._running:
+                    try:
+                        message = await ws.recv()
+                        print(f"[ALPACA][TRADE_UPDATE][RECEIVED] {message}")
+                    except websockets.ConnectionClosed:
+                        print("[ALPACA_TRADING][CLOSED] Connection closed")
+                        break
+        except Exception as e:
+             print(f"[ALPACA_TRADING][ERROR] Connection failed: {e}")
+
+    async def _subscribe(self) -> None:
+        subscribe_message = {
+            "action": "listen",
+            "data": {
+                "streams": ["trade_updates"]
+            }
+        }
+        await self._ws.send(json.dumps(subscribe_message))
+        print(f"[ALPACA_TRADING][SUBSCRIBE_SENT] Subscribed to trade_updates")
