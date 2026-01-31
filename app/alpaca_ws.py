@@ -130,11 +130,88 @@ class AlpacaTradingStream(AlpacaBaseStream):
                     try:
                         message = await ws.recv()
                         print(f"[ALPACA][TRADE_UPDATE][RECEIVED] {message}")
+                        
+                        try:
+                            data = json.loads(message)
+                            stream = data.get("stream")
+                            if stream == "trade_updates":
+                                payload = data.get("data", {})
+                                event_type = payload.get("event")
+                                execution = payload.get("order", {})
+                                
+                                # Only process relevant event types if needed, but MD says "trade_updates messages"
+                                # so we process all logic here.
+                                
+                                # Extract fields
+                                order_id = execution.get("id")
+                                symbol = execution.get("symbol")
+                                side = execution.get("side")
+                                qty = float(execution.get("qty") or 0)
+                                filled_qty = float(execution.get("filled_qty") or 0)
+                                
+                                # Price logic: 'filled_avg_price' is usually present in fills. 
+                                # If null, use None.
+                                raw_price = execution.get("filled_avg_price")
+                                price = float(raw_price) if raw_price else None
+                                
+                                # Timestamp logic
+                                # Alpaca sends timestamps as strings or isoformats usually,
+                                # depending on the specific message 'timestamp' or 'created_at'.
+                                # For PoC, we try to parse 'timestamp' from the event payload.
+                                # MD says "Alpaca-provided timestamp (epoch ms)".
+                                # Usually payload['timestamp'] is in nano/micro or ISO.
+                                # Let's assume standard ISO or similar and convert, or if it is already numeric.
+                                # Actually, `payload` has `timestamp` for the event itself.
+                                raw_ts = payload.get("timestamp")
+                                ts_alpaca = 0.0
+                                if raw_ts:
+                                    # Try parsing ISO if string
+                                    if isinstance(raw_ts, str):
+                                        try:
+                                            # Alpaca timestamps are often like "2023-10-27T..."
+                                            # We need a robust parser or simple assumption.
+                                            # For simplicity, let's use datetime.fromisoformat if valid, 
+                                            # removing 'Z' if present.
+                                            dt = datetime.fromisoformat(raw_ts.replace('Z', '+00:00'))
+                                            ts_alpaca = dt.timestamp() * 1000 # to ms
+                                        except ValueError:
+                                            pass
+                                    elif isinstance(raw_ts, (int, float)):
+                                         # If nanoseconds, convert to ms
+                                         if raw_ts > 1000000000000000: # heuristic for ns
+                                             ts_alpaca = raw_ts / 1000000
+                                         else:
+                                             ts_alpaca = raw_ts
+                                         
+                                
+                                # Create Normalized Event
+                                from app.schemas import UserActivityEvent
+                                import uuid
+                                import time
+                                
+                                normalized_event = UserActivityEvent(
+                                    activity_id=str(uuid.uuid4()),
+                                    alpaca_event_type=event_type or "unknown",
+                                    order_id=order_id or "",
+                                    symbol=symbol or "",
+                                    side=side or "",
+                                    qty=qty,
+                                    filled_qty=filled_qty,
+                                    price=price,
+                                    timestamp_alpaca=ts_alpaca,
+                                    timestamp_server=time.time() * 1000
+                                )
+                                
+                                print(f"[USER_ACTIVITY][NORMALIZED] {normalized_event.json()}")
+                                
+                        except json.JSONDecodeError:
+                            pass
+                        except Exception as e:
+                            print(f"[ALPACA_TRADING][ERROR] Normalization failed: {e}")
+                            
                     except websockets.ConnectionClosed:
                         print("[ALPACA_TRADING][CLOSED] Connection closed")
                         break
-        except Exception as e:
-             print(f"[ALPACA_TRADING][ERROR] Connection failed: {e}")
 
     async def _subscribe(self) -> None:
         subscribe_message = {

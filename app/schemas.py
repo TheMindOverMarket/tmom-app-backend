@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Dict
+from typing import Dict, Optional
 
 
 class MarketStateEvent(BaseModel):
@@ -8,3 +8,16 @@ class MarketStateEvent(BaseModel):
     timestamp: str
     price: float
     metrics: Dict[str, float]
+
+
+class UserActivityEvent(BaseModel):
+    activity_id: str
+    alpaca_event_type: str
+    order_id: str
+    symbol: str
+    side: str
+    qty: float
+    filled_qty: float
+    price: Optional[float]
+    timestamp_alpaca: float
+    timestamp_server: float
