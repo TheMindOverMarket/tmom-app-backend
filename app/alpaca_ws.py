@@ -55,7 +55,7 @@ class AlpacaCryptoStream(AlpacaBaseStream):
 
     async def start(self) -> None:
         # Import inside the function to avoid circular dependency
-        from app.main import broadcaster
+        from app.main import market_broadcaster
 
         print("[ALPACA][START] AlpacaCryptoStream.start() invoked")
         print(f"[ALPACA][CONNECT] Connecting to {self.ws_url}")
@@ -105,8 +105,9 @@ class AlpacaCryptoStream(AlpacaBaseStream):
                                     # Update cache for context attachment
                                     self.latest_market_state[symbol] = cached_event
                                     
+                                    
                                     print("[MARKET_STATE][BROADCAST] Broadcasting market_state event")
-                                    await broadcaster.broadcast(json.dumps(broadcast_event))
+                                    await market_broadcaster.broadcast(json.dumps(broadcast_event))
                             else:
                                 print("[ALPACA][IGNORED] Message type not relevant")
                 except Exception as e:
@@ -234,8 +235,8 @@ class AlpacaTradingStream(AlpacaBaseStream):
                                 print(f"[USER_ACTIVITY][ENRICHED] {normalized_event.json()}")
 
                                 # Emit downstream (MD 3 requirement)
-                                from app.main import broadcaster
-                                await broadcaster.broadcast(normalized_event.json())
+                                from app.main import activity_broadcaster
+                                await activity_broadcaster.broadcast(normalized_event.json())
                                 print(f"[USER_ACTIVITY][EMITTED] {normalized_event.json()}")
 
                         except json.JSONDecodeError:
