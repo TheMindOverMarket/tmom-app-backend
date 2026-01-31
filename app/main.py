@@ -5,8 +5,8 @@ from app.broadcast import MarketStateBroadcaster
 
 app = FastAPI(title=settings.app_name)
 
-market_broadcaster = MarketStateBroadcaster()
-activity_broadcaster = MarketStateBroadcaster()
+market_broadcaster = MarketStateBroadcaster(name="MARKET_STATE")
+activity_broadcaster = MarketStateBroadcaster(name="USER_ACTIVITY")
 
 app.add_event_handler("startup", on_startup)
 app.add_event_handler("shutdown", on_shutdown)

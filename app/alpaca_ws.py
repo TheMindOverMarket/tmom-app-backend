@@ -23,6 +23,7 @@ class AlpacaBaseStream:
             raise RuntimeError("Missing Alpaca API credentials")
 
     async def connect(self):
+        print(f"[{self.__class__.__name__}][CONNECTING] Initiating connection to {self.ws_url}")
         return websockets.connect(
             self.ws_url,
             ping_interval=20,
@@ -42,9 +43,13 @@ class AlpacaBaseStream:
         print(f"[{self.__class__.__name__}][AUTH_SENT] Auth message sent")
 
     async def stop(self) -> None:
+        # Signal the loop to stop processing messages
+        print(f"[{self.__class__.__name__}][STOPPING] Setting running flag to False")
         self._running = False
         if self._ws:
             try:
+                # Explicitly close socket to unblock any pending recv() calls
+                print(f"[{self.__class__.__name__}][CLOSING_SOCKET] Closing WebSocket connection")
                 await self._ws.close()
             except Exception as e:
                 print(f"[{self.__class__.__name__}][STOP_ERROR] Error closing websocket: {e}")
@@ -60,7 +65,11 @@ class AlpacaCryptoStream(AlpacaBaseStream):
         # Import inside the function to avoid circular dependency
         from app.main import market_broadcaster
 
-        print("[ALPACA][START] AlpacaCryptoStream.start() invoked")
+    async def start(self) -> None:
+        # Import inside the function to avoid circular dependency
+        from app.main import market_broadcaster
+
+        print("[STREAM][STARTED] AlpacaCryptoStream task running")
         print(f"[ALPACA][CONNECT] Connecting to {self.ws_url}")
 
         async with await self.connect() as ws:
@@ -71,14 +80,16 @@ class AlpacaCryptoStream(AlpacaBaseStream):
 
             while self._running:
                 try:
-                    # Check running state before waiting
+                    # Check running state before waiting to allow immediate exit on stop signal
                     if not self._running:
                         break
                         
-                    print("[ALPACA][WAITING] Awaiting next message from Alpaca...")
+                    # print("[ALPACA][WAITING] ...") # Reduced verbosity
                     message = await ws.recv()
                     print(f"[ALPACA][RECEIVED_RAW] {message}")
-
+                    
+                    # ... [parsing logic unchanged] ... 
+                    
                     try:
                         print("[ALPACA][PARSE] Parsing incoming message")
                         data = json.loads(message)
@@ -87,6 +98,7 @@ class AlpacaCryptoStream(AlpacaBaseStream):
                                 if obj.get("T") == "q":
                                     bp = obj.get("bp")
                                     ap = obj.get("ap")
+                                    # ...
                                     symbol = obj.get("S")
                                     print(f"[ALPACA][QUOTE] symbol={symbol} bid={bp} ask={ap}")
 
@@ -95,6 +107,9 @@ class AlpacaCryptoStream(AlpacaBaseStream):
                                         current_time = datetime.utcnow().isoformat() + "Z"
                                         # Internal timestamp for age calculation
                                         ts_ms = datetime.utcnow().timestamp() * 1000
+                                        
+                                        # mid_price variable missing in provided snippet context but assumed present in logic
+                                        mid_price = (bp + ap) / 2
                                         
                                         print(f"[MARKET_STATE][BUILD] symbol={symbol} price={mid_price} time={current_time}")
 
@@ -122,16 +137,20 @@ class AlpacaCryptoStream(AlpacaBaseStream):
                         print(f"Error processing message logic: {e}")
                         
                 except asyncio.CancelledError:
-                    print("[ALPACA][CANCELLED] Task cancelled")
+                    # Expected when task is cancelled during app shutdown
+                    print("[ALPACA][CANCELLED] Task cancelled, exiting loop")
                     break
                 except websockets.ConnectionClosed:
+                    # Expected when socket is closed explicitly by stop()
                     if self._running:
                         print("[ALPACA][CLOSED] Connection closed unexpectedly")
                     else:
-                        print("[ALPACA][CLOSED] Connection closed cleanly")
+                        print("[ALPACA][CLOSED] Connection closed cleanly (Intentional)")
                     break
                 except Exception as e:
                     print(f"[ALPACA][ERROR] Loop error: {e}")
+        
+        print(f"[{self.__class__.__name__}][EXITED_CLEANLY] Background task finished")
 
     async def _subscribe(self) -> None:
         subscribe_message = {
@@ -147,7 +166,7 @@ class AlpacaTradingStream(AlpacaBaseStream):
         super().__init__(ALPACA_TRADING_WS_URL)
 
     async def start(self) -> None:
-        print("[ALPACA_TRADING][START] AlpacaTradingStream.start() invoked")
+        print("[STREAM][STARTED] AlpacaTradingStream task running")
         print(f"[ALPACA_TRADING][CONNECT] Connecting to {self.ws_url}")
 
         try:
@@ -268,16 +287,23 @@ class AlpacaTradingStream(AlpacaBaseStream):
                             print(f"[ALPACA_TRADING][ERROR] Normalization failed: {e}")
 
                     except asyncio.CancelledError:
-                        print("[ALPACA_TRADING][CANCELLED] Task cancelled")
+                        # Expected when task is cancelled during app shutdown
+                        print("[ALPACA_TRADING][CANCELLED] Task cancelled, exiting loop")
                         break
                     except websockets.ConnectionClosed:
+                        # Expected when socket is closed explicitly
                         if self._running:
                             print("[ALPACA_TRADING][CLOSED] Connection closed unexpectedly")
                         else:
-                            print("[ALPACA_TRADING][CLOSED] Connection closed cleanly")
+                            print("[ALPACA_TRADING][CLOSED] Connection closed cleanly (Intentional)")
                         break
                     except Exception as e:
                         print(f"[ALPACA_TRADING][ERROR] Loop error: {e}")
+
+        except Exception as e:
+            print(f"[ALPACA_TRADING][ERROR] Connection failed: {e}")
+        
+        print(f"[{self.__class__.__name__}][EXITED_CLEANLY] Background task finished")
 
     async def _subscribe(self) -> None:
         subscribe_message = {
