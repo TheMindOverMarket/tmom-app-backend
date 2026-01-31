@@ -44,7 +44,10 @@ class AlpacaBaseStream:
     async def stop(self) -> None:
         self._running = False
         if self._ws:
-            await self._ws.close()
+            try:
+                await self._ws.close()
+            except Exception as e:
+                print(f"[{self.__class__.__name__}][STOP_ERROR] Error closing websocket: {e}")
 
 
 class AlpacaCryptoStream(AlpacaBaseStream):
@@ -67,51 +70,68 @@ class AlpacaCryptoStream(AlpacaBaseStream):
             await self._subscribe()
 
             while self._running:
-                print("[ALPACA][WAITING] Awaiting next message from Alpaca...")
-                message = await ws.recv()
-                print(f"[ALPACA][RECEIVED_RAW] {message}")
-
                 try:
-                    print("[ALPACA][PARSE] Parsing incoming message")
-                    data = json.loads(message)
-                    if isinstance(data, list):
-                        for obj in data:
-                            if obj.get("T") == "q":
-                                bp = obj.get("bp")
-                                ap = obj.get("ap")
-                                symbol = obj.get("S")
-                                print(f"[ALPACA][QUOTE] symbol={symbol} bid={bp} ask={ap}")
+                    # Check running state before waiting
+                    if not self._running:
+                        break
+                        
+                    print("[ALPACA][WAITING] Awaiting next message from Alpaca...")
+                    message = await ws.recv()
+                    print(f"[ALPACA][RECEIVED_RAW] {message}")
 
-                                if bp is not None and ap is not None:
-                                    # Legacy timestamp format for downstream compatibility
-                                    current_time = datetime.utcnow().isoformat() + "Z"
-                                    # Internal timestamp for age calculation
-                                    ts_ms = datetime.utcnow().timestamp() * 1000
-                                    
-                                    print(f"[MARKET_STATE][BUILD] symbol={symbol} price={mid_price} time={current_time}")
+                    try:
+                        print("[ALPACA][PARSE] Parsing incoming message")
+                        data = json.loads(message)
+                        if isinstance(data, list):
+                            for obj in data:
+                                if obj.get("T") == "q":
+                                    bp = obj.get("bp")
+                                    ap = obj.get("ap")
+                                    symbol = obj.get("S")
+                                    print(f"[ALPACA][QUOTE] symbol={symbol} bid={bp} ask={ap}")
 
-                                    # Event for Broadcast (Strict legacy schema: no raw_timestamp_ms)
-                                    broadcast_event = {
-                                        "event_type": "market_state",
-                                        "symbol": "BTC", 
-                                        "current_time": current_time,
-                                        "price": mid_price
-                                    }
-                                    
-                                    # Event for Cache (Includes raw_timestamp_ms for internal use)
-                                    cached_event = broadcast_event.copy()
-                                    cached_event["raw_timestamp_ms"] = ts_ms
-                                    
-                                    # Update cache for context attachment
-                                    self.latest_market_state[symbol] = cached_event
-                                    
-                                    
-                                    print("[MARKET_STATE][BROADCAST] Broadcasting market_state event")
-                                    await market_broadcaster.broadcast(json.dumps(broadcast_event))
-                            else:
-                                print("[ALPACA][IGNORED] Message type not relevant")
+                                    if bp is not None and ap is not None:
+                                        # Legacy timestamp format for downstream compatibility
+                                        current_time = datetime.utcnow().isoformat() + "Z"
+                                        # Internal timestamp for age calculation
+                                        ts_ms = datetime.utcnow().timestamp() * 1000
+                                        
+                                        print(f"[MARKET_STATE][BUILD] symbol={symbol} price={mid_price} time={current_time}")
+
+                                        # Event for Broadcast (Strict legacy schema: no raw_timestamp_ms)
+                                        broadcast_event = {
+                                            "event_type": "market_state",
+                                            "symbol": "BTC", 
+                                            "current_time": current_time,
+                                            "price": mid_price
+                                        }
+                                        
+                                        # Event for Cache (Includes raw_timestamp_ms for internal use)
+                                        cached_event = broadcast_event.copy()
+                                        cached_event["raw_timestamp_ms"] = ts_ms
+                                        
+                                        # Update cache for context attachment
+                                        self.latest_market_state[symbol] = cached_event
+                                        
+                                        
+                                        print("[MARKET_STATE][BROADCAST] Broadcasting market_state event")
+                                        await market_broadcaster.broadcast(json.dumps(broadcast_event))
+                                else:
+                                    print("[ALPACA][IGNORED] Message type not relevant")
+                    except Exception as e:
+                        print(f"Error processing message logic: {e}")
+                        
+                except asyncio.CancelledError:
+                    print("[ALPACA][CANCELLED] Task cancelled")
+                    break
+                except websockets.ConnectionClosed:
+                    if self._running:
+                        print("[ALPACA][CLOSED] Connection closed unexpectedly")
+                    else:
+                        print("[ALPACA][CLOSED] Connection closed cleanly")
+                    break
                 except Exception as e:
-                    print(f"Error processing message: {e}")
+                    print(f"[ALPACA][ERROR] Loop error: {e}")
 
     async def _subscribe(self) -> None:
         subscribe_message = {
@@ -139,6 +159,9 @@ class AlpacaTradingStream(AlpacaBaseStream):
 
                 while self._running:
                     try:
+                        if not self._running:
+                            break
+                            
                         message = await ws.recv()
                         print(f"[ALPACA][TRADE_UPDATE][RECEIVED] {message}")
 
@@ -244,11 +267,17 @@ class AlpacaTradingStream(AlpacaBaseStream):
                         except Exception as e:
                             print(f"[ALPACA_TRADING][ERROR] Normalization failed: {e}")
 
-                    except websockets.ConnectionClosed:
-                        print("[ALPACA_TRADING][CLOSED] Connection closed")
+                    except asyncio.CancelledError:
+                        print("[ALPACA_TRADING][CANCELLED] Task cancelled")
                         break
-        except Exception as e:
-            print(f"[ALPACA_TRADING][ERROR] Connection failed: {e}")
+                    except websockets.ConnectionClosed:
+                        if self._running:
+                            print("[ALPACA_TRADING][CLOSED] Connection closed unexpectedly")
+                        else:
+                            print("[ALPACA_TRADING][CLOSED] Connection closed cleanly")
+                        break
+                    except Exception as e:
+                        print(f"[ALPACA_TRADING][ERROR] Loop error: {e}")
 
     async def _subscribe(self) -> None:
         subscribe_message = {
