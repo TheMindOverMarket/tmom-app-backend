@@ -204,6 +204,13 @@ class AlpacaTradingStream(AlpacaBaseStream):
                                 
                                 print(f"[USER_ACTIVITY][NORMALIZED] {normalized_event.json()}")
                                 
+                                # Emit downstream (MD 3 requirement)
+                                # Using In-Process Broadcast via the existing MarketStateBroadcaster 
+                                # (which is actually a general broadcaster despite the name)
+                                from app.main import broadcaster
+                                await broadcaster.broadcast(normalized_event.json())
+                                print(f"[USER_ACTIVITY][EMITTED] {normalized_event.json()}")
+                                
                         except json.JSONDecodeError:
                             pass
                         except Exception as e:
