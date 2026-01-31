@@ -83,27 +83,30 @@ class AlpacaCryptoStream(AlpacaBaseStream):
                                 print(f"[ALPACA][QUOTE] symbol={symbol} bid={bp} ask={ap}")
 
                                 if bp is not None and ap is not None:
-                                    mid_price = (bp + ap) / 2
+                                    # Legacy timestamp format for downstream compatibility
                                     current_time = datetime.utcnow().isoformat() + "Z"
-
+                                    # Internal timestamp for age calculation
+                                    ts_ms = datetime.utcnow().timestamp() * 1000
+                                    
                                     print(f"[MARKET_STATE][BUILD] symbol={symbol} price={mid_price} time={current_time}")
 
-                                    event = {
+                                    # Event for Broadcast (Strict legacy schema: no raw_timestamp_ms)
+                                    broadcast_event = {
                                         "event_type": "market_state",
-                                        "symbol": "BTC",
+                                        "symbol": "BTC", 
                                         "current_time": current_time,
-                                        "price": mid_price,
-                                        # Capture raw timestamp for age calc
-                                        "raw_timestamp_ms": datetime.utcnow().timestamp() * 1000
+                                        "price": mid_price
                                     }
-
+                                    
+                                    # Event for Cache (Includes raw_timestamp_ms for internal use)
+                                    cached_event = broadcast_event.copy()
+                                    cached_event["raw_timestamp_ms"] = ts_ms
+                                    
                                     # Update cache for context attachment
-                                    # symbol variable here is likely "BTC/USD" from the feed
-                                    self.latest_market_state[symbol] = event
-
-                                    event_json = json.dumps(event)
+                                    self.latest_market_state[symbol] = cached_event
+                                    
                                     print("[MARKET_STATE][BROADCAST] Broadcasting market_state event")
-                                    await broadcaster.broadcast(event_json)
+                                    await broadcaster.broadcast(json.dumps(broadcast_event))
                             else:
                                 print("[ALPACA][IGNORED] Message type not relevant")
                 except Exception as e:
