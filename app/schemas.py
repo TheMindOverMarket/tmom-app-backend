@@ -52,9 +52,7 @@ class TradeTriggerResponse(BaseModel):
 
 
 class RuleIngestRequest(BaseModel):
-    id: str
     rule_nl: str
-    ts: str
 
 
 class RuleIngestResponse(BaseModel):

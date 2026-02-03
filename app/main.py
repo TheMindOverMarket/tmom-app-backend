@@ -1,3 +1,5 @@
+import uuid
+from datetime import datetime, timezone
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from app.config import settings
 from app.lifecycle import on_startup, on_shutdown
@@ -44,11 +46,16 @@ async def ingest_rule(request: RuleIngestRequest):
     Ingests a natural language rule. 
     Currently just logs and returns, placeholder for datastore/downstream service.
     """
-    print(f"[RULE_INGEST] Received: {request}")
-    # TODO: Forward to downstream service or save to datastore
+    rule_id = str(uuid.uuid4())
+    timestamp = datetime.now(timezone.utc).isoformat()
+    
+    # Simulating the creation of the record with generated ID and TS
+    print(f"[RULE_INGEST] Received: {request.rule_nl} | Assigned ID: {rule_id} | TS: {timestamp}")
+    
+    # TODO: Forward to downstream service or save to datastore with these details
     return RuleIngestResponse(
         status="success",
-        received_id=request.id,
+        received_id=rule_id,
         message="Rule received successfully"
     )
 
