@@ -35,3 +35,17 @@ class UserActivityEvent(BaseModel):
     # capturing: The milliseconds elapsed between the MarketState creation and this UserActivity.
     # why: Measures "data freshness". Lower is better. If this is high (>5000ms), state becomes "ATTACHED_STALE".
     market_ref_age_ms: Optional[float] = None
+
+
+class TradeTriggerRequest(BaseModel):
+    symbol: str = "BTC/USD"
+    qty: str = "0.001"
+    side: str = "buy"
+    type: str = "market"
+    time_in_force: str = "gtc"
+
+
+class TradeTriggerResponse(BaseModel):
+    status: str
+    order_id: Optional[str] = None
+    error: Optional[str] = None

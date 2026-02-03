@@ -3,6 +3,9 @@ from app.config import settings
 from app.lifecycle import on_startup, on_shutdown
 from app.broadcast import MarketStateBroadcaster
 
+from app.schemas import TradeTriggerRequest, TradeTriggerResponse
+from app.trading import place_alpaca_order
+
 app = FastAPI(title=settings.app_name)
 
 market_broadcaster = MarketStateBroadcaster(name="MARKET_STATE")
@@ -25,6 +28,14 @@ async def health() -> dict:
         "status": "ok",
         "environment": settings.environment
     }
+
+@app.post("/trade/trigger", response_model=TradeTriggerResponse)
+async def trigger_trade(trade_req: TradeTriggerRequest = TradeTriggerRequest()):
+    """
+    Triggers a trade on Alpaca. 
+    Can be called with an empty body to use defaults (Buy 0.001 BTC/USD).
+    """
+    return place_alpaca_order(trade_req)
 
 
 @app.websocket("/ws/market-state")
