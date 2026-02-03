@@ -49,3 +49,15 @@ class TradeTriggerResponse(BaseModel):
     status: str
     order_id: Optional[str] = None
     error: Optional[str] = None
+
+
+class RuleIngestRequest(BaseModel):
+    id: str
+    rule_nl: str
+    ts: str
+
+
+class RuleIngestResponse(BaseModel):
+    status: str
+    received_id: str
+    message: Optional[str] = None
