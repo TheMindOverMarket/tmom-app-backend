@@ -14,7 +14,8 @@ from app.schemas import (
     RuleIngestRequest, 
     RuleIngestResponse,
     UserActionIngestRequest,
-    UserActionIngestResponse
+    UserActionIngestResponse,
+    UserActionRunResponse
 )
 from app.trading import place_alpaca_order
 from app.rule_engine.parser import parse_user_rule
@@ -113,6 +114,33 @@ async def ingest_user_action(
         promptId=str(run.id),
         status=run.status,
         rule_output_json=run.rule_output_json
+    )
+
+
+@app.get("/user-action/{prompt_id}", response_model=UserActionRunResponse)
+async def get_user_action(
+    prompt_id: uuid.UUID,
+    db: Session = Depends(get_session)
+):
+    """
+    Fetches a single UserActionRun by its ID. Returns 404 if not found.
+    """
+    from sqlmodel import select
+    run = db.exec(select(UserActionRun).where(UserActionRun.id == prompt_id)).first()
+    
+    if not run:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="UserActionRun not found")
+        
+    return UserActionRunResponse(
+        promptId=str(run.id),
+        userId=run.user_id,
+        actionType=run.action_type,
+        rawInputText=run.raw_input_text,
+        ruleOutputJson=run.rule_output_json,
+        status=run.status,
+        createdAt=run.created_at.isoformat(),
+        updatedAt=run.updated_at.isoformat()
     )
 
 
