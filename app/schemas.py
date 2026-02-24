@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Dict, Optional
+from typing import Dict, Optional, Any
 
 
 class MarketStateEvent(BaseModel):
@@ -59,3 +59,13 @@ class RuleIngestResponse(BaseModel):
     status: str
     received_id: str
     message: Optional[str] = None
+
+class UserActionIngestRequest(BaseModel):
+    user_id: str
+    action_type: str = "add_rule"
+    raw_input_text: str
+
+class UserActionIngestResponse(BaseModel):
+    promptId: str
+    status: str
+    rule_output_json: Optional[Dict[str, Any]] = None

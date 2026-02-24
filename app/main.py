@@ -3,12 +3,19 @@ from datetime import datetime, timezone
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends
 from sqlmodel import Session
 from app.database import get_session
-from app.models import Rule
+from app.models import Rule, UserActionRun
 from app.config import settings
 from app.lifecycle import on_startup, on_shutdown
 from app.broadcast import MarketStateBroadcaster
 
-from app.schemas import TradeTriggerRequest, TradeTriggerResponse, RuleIngestRequest, RuleIngestResponse
+from app.schemas import (
+    TradeTriggerRequest, 
+    TradeTriggerResponse, 
+    RuleIngestRequest, 
+    RuleIngestResponse,
+    UserActionIngestRequest,
+    UserActionIngestResponse
+)
 from app.trading import place_alpaca_order
 
 app = FastAPI(title=settings.app_name)
@@ -62,6 +69,59 @@ async def ingest_rule(
         status="success",
         received_id=new_rule.id,
         message="Rule received and saved successfully"
+    )
+
+
+@app.post("/user-action/ingest", response_model=UserActionIngestResponse)
+async def ingest_user_action(
+    request: UserActionIngestRequest, 
+    db: Session = Depends(get_session)
+):
+    """
+    Synchronous end-to-end ingestion flow:
+    1. Persist raw input
+    2. Run logic (structured output)
+    3. Update record
+    4. Return result
+    """
+    # 1. Create UserActionRun row
+    run = UserActionRun(
+        user_id=request.user_id,
+        action_type=request.action_type,
+        raw_input_text=request.raw_input_text,
+        status="pending"
+    )
+    db.add(run)
+    db.commit()
+    db.refresh(run)
+
+    # 2. Call rule parsing / rule engine logic (Mock for now as no existing logic found)
+    # In a real scenario, this might call an LLM or a deterministic parser.
+    rule_output = {
+        "text_input": request.raw_input_text,
+        "rule_type": "conditional_trade",
+        "parsed_entities": {
+            "action": "buy" if "buy" in request.raw_input_text.lower() else "sell",
+            "symbol": "BTC/USD",
+            "condition": "price_cross"
+        },
+        "processed_at": datetime.now(timezone.utc).isoformat()
+    }
+
+    # 3. Update the same row
+    run.rule_output_json = rule_output
+    run.status = "processed"
+    run.updated_at = datetime.now(timezone.utc)
+
+    db.add(run)
+    db.commit()
+    db.refresh(run)
+
+    # 4. Return promptId + structured rule JSON
+    return UserActionIngestResponse(
+        promptId=str(run.id),
+        status=run.status,
+        rule_output_json=run.rule_output_json
     )
 
 
