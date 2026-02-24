@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends
-from sqlmodel import Session
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, HTTPException
+from sqlmodel import Session, select
 from app.database import get_session
 from app.models import Rule, UserActionRun
 from app.config import settings
@@ -125,11 +125,9 @@ async def get_user_action(
     """
     Fetches a single UserActionRun by its ID. Returns 404 if not found.
     """
-    from sqlmodel import select
     run = db.exec(select(UserActionRun).where(UserActionRun.id == prompt_id)).first()
     
     if not run:
-        from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="UserActionRun not found")
         
     return UserActionRunResponse(
