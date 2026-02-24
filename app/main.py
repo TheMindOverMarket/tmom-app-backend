@@ -14,11 +14,9 @@ from app.schemas import (
     RuleIngestRequest, 
     RuleIngestResponse,
     UserActionIngestRequest,
-    UserActionIngestResponse,
-    UserActionRunResponse
+    UserActionIngestResponse
 )
 from app.trading import place_alpaca_order
-from app.rule_engine.parser import parse_user_rule
 
 app = FastAPI(title=settings.app_name)
 
@@ -52,6 +50,8 @@ async def trigger_trade(trade_req: TradeTriggerRequest = TradeTriggerRequest()):
     return place_alpaca_order(trade_req)
 
 
+# LEGACY: Use /user-action/ingest for new rule ingestion flows.
+# This endpoint is kept for backward compatibility but is deprecated.
 @app.post("/rule/ingest", response_model=RuleIngestResponse)
 async def ingest_rule(
     request: RuleIngestRequest, 
@@ -80,76 +80,29 @@ async def ingest_user_action(
     db: Session = Depends(get_session)
 ):
     """
-    Synchronous end-to-end ingestion flow:
+    Write-only ingest:
     1. Persist raw input
-    2. Run logic (structured output)
-    3. Update record
-    4. Return result
+    2. Set status to queued
+    3. Return runId immediately
     """
-    # 1. Create UserActionRun row
     run = UserActionRun(
         user_id=request.user_id,
         action_type=request.action_type,
         raw_input_text=request.raw_input_text,
-        status="pending"
+        status="queued"
     )
     db.add(run)
     db.commit()
     db.refresh(run)
 
-    # 2. Call rule parsing / rule engine logic
-    rule_output = parse_user_rule(request.raw_input_text)
-
-    # 3. Update the same row
-    run.rule_output_json = rule_output
-    run.status = "processed"
-    run.updated_at = datetime.now(timezone.utc)
-
-    db.add(run)
-    db.commit()
-    db.refresh(run)
-
-    # 4. Return promptId + structured rule JSON
     return UserActionIngestResponse(
-        promptId=str(run.id),
-        status=run.status,
-        rule_output_json=run.rule_output_json
+        runId=str(run.id),
+        status=run.status
     )
 
 
-@app.get("/user-action/{prompt_id}", response_model=UserActionRunResponse)
-async def get_user_action(
-    prompt_id: uuid.UUID,
-    db: Session = Depends(get_session)
-):
-    """
-    Fetches a single UserActionRun by its ID. Returns 404 if not found.
-    """
-    run = db.exec(select(UserActionRun).where(UserActionRun.id == prompt_id)).first()
-    
-    if not run:
-        raise HTTPException(status_code=404, detail="UserActionRun not found")
-        
-    return UserActionRunResponse(
-        promptId=str(run.id),
-        userId=run.user_id,
-        actionType=run.action_type,
-        rawInputText=run.raw_input_text,
-        ruleOutputJson=run.rule_output_json,
-        status=run.status,
-        createdAt=run.created_at.isoformat(),
-        updatedAt=run.updated_at.isoformat()
-    )
-
-
-@app.get("/rules")
-async def get_rules(db: Session = Depends(get_session)):
-    """
-    Returns all ingested rules.
-    """
-    from sqlmodel import select
-    rules = db.exec(select(Rule)).all()
-    return rules
+# TODO: Re-introduce GET /rules when scoped by playbookId.
+# This endpoint currently removed to prevent global exposure and align with playbook architecture.
 
 
 @app.websocket("/ws/market-state")

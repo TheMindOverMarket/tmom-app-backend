@@ -66,16 +66,6 @@ class UserActionIngestRequest(BaseModel):
     raw_input_text: str
 
 class UserActionIngestResponse(BaseModel):
-    promptId: str
+    runId: str
     status: str
-    rule_output_json: Optional[Dict[str, Any]] = None
 
-class UserActionRunResponse(BaseModel):
-    promptId: str
-    userId: str
-    actionType: str
-    rawInputText: str
-    ruleOutputJson: Optional[Dict[str, Any]] = None
-    status: str
-    createdAt: str
-    updatedAt: str
