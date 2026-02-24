@@ -1,4 +1,5 @@
-from pydantic import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from typing import Optional
 
 
 class Settings(BaseSettings):
@@ -6,10 +7,11 @@ class Settings(BaseSettings):
     environment: str = "local"
     alpaca_api_key: str = ""
     alpaca_api_secret: str = ""
+    
+    # Database
+    database_url: str = "sqlite:///./tmom.db"
 
-    class Config:
-        env_file = ".env"
-        case_sensitive = False
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 
 settings = Settings()

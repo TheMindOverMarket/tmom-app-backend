@@ -1,6 +1,9 @@
 import uuid
 from datetime import datetime, timezone
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends
+from sqlmodel import Session
+from app.database import get_session
+from app.models import Rule
 from app.config import settings
 from app.lifecycle import on_startup, on_shutdown
 from app.broadcast import MarketStateBroadcaster
@@ -41,23 +44,35 @@ async def trigger_trade(trade_req: TradeTriggerRequest = TradeTriggerRequest()):
 
 
 @app.post("/rule/ingest", response_model=RuleIngestResponse)
-async def ingest_rule(request: RuleIngestRequest):
+async def ingest_rule(
+    request: RuleIngestRequest, 
+    db: Session = Depends(get_session)
+):
     """
-    Ingests a natural language rule. 
-    Currently just logs and returns, placeholder for datastore/downstream service.
+    Ingests a natural language rule and saves it to the database.
     """
-    rule_id = str(uuid.uuid4())
-    timestamp = datetime.now(timezone.utc).isoformat()
+    new_rule = Rule(rule_nl=request.rule_nl)
+    db.add(new_rule)
+    db.commit()
+    db.refresh(new_rule)
     
-    # Simulating the creation of the record with generated ID and TS
-    print(f"[RULE_INGEST] Received: {request.rule_nl} | Assigned ID: {rule_id} | TS: {timestamp}")
+    print(f"[RULE_INGEST] Saved: {new_rule.rule_nl} | ID: {new_rule.id} | TS: {new_rule.created_at}")
     
-    # TODO: Forward to downstream service or save to datastore with these details
     return RuleIngestResponse(
         status="success",
-        received_id=rule_id,
-        message="Rule received successfully"
+        received_id=new_rule.id,
+        message="Rule received and saved successfully"
     )
+
+
+@app.get("/rules")
+async def get_rules(db: Session = Depends(get_session)):
+    """
+    Returns all ingested rules.
+    """
+    from sqlmodel import select
+    rules = db.exec(select(Rule)).all()
+    return rules
 
 
 @app.websocket("/ws/market-state")

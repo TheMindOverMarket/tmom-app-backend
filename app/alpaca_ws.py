@@ -237,7 +237,7 @@ class AlpacaTradingStream(AlpacaBaseStream):
                                     timestamp_server=time.time() * 1000
                                 )
 
-                                print(f"[USER_ACTIVITY][NORMALIZED] {normalized_event.json()}")
+                                print(f"[USER_ACTIVITY][NORMALIZED] {normalized_event.model_dump_json()}")
 
                                 # Context Attachment (MD 4 Requirement)
                                 from app.lifecycle import _stream as crypto_stream_instance
@@ -274,12 +274,12 @@ class AlpacaTradingStream(AlpacaBaseStream):
                                 normalized_event.market_snapshot_id = market_snapshot_id
                                 normalized_event.market_ref_age_ms = market_ref_age_ms
 
-                                print(f"[USER_ACTIVITY][ENRICHED] {normalized_event.json()}")
+                                print(f"[USER_ACTIVITY][ENRICHED] {normalized_event.model_dump_json()}")
 
                                 # Emit downstream (MD 3 requirement)
                                 from app.main import activity_broadcaster
-                                await activity_broadcaster.broadcast(normalized_event.json())
-                                print(f"[USER_ACTIVITY][EMITTED] {normalized_event.json()}")
+                                await activity_broadcaster.broadcast(normalized_event.model_dump_json())
+                                print(f"[USER_ACTIVITY][EMITTED] {normalized_event.model_dump_json()}")
 
                         except json.JSONDecodeError:
                             pass

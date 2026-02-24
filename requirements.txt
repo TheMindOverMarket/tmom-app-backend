@@ -1,6 +1,10 @@
 fastapi
 uvicorn[standard]
-pydantic<2.0.0
+pydantic
+pydantic-settings
 python-dotenv
 websockets
 alpaca-trade-api
+sqlmodel
+alembic
+psycopg2-binary
