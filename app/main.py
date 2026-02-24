@@ -1,9 +1,9 @@
 import uuid
 from datetime import datetime, timezone
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, HTTPException
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends
 from sqlmodel import Session, select
 from app.database import get_session
-from app.models import Rule, UserActionRun
+from app.models import UserActionRun
 from app.config import settings
 from app.lifecycle import on_startup, on_shutdown
 from app.broadcast import MarketStateBroadcaster
@@ -12,9 +12,7 @@ from app.schemas import (
     TradeTriggerRequest, 
     TradeTriggerResponse, 
     RuleIngestRequest, 
-    RuleIngestResponse,
-    UserActionIngestRequest,
-    UserActionIngestResponse
+    RuleIngestResponse
 )
 from app.trading import place_alpaca_order
 
@@ -50,52 +48,30 @@ async def trigger_trade(trade_req: TradeTriggerRequest = TradeTriggerRequest()):
     return place_alpaca_order(trade_req)
 
 
-# LEGACY: Use /user-action/ingest for new rule ingestion flows.
-# This endpoint is kept for backward compatibility but is deprecated.
 @app.post("/rule/ingest", response_model=RuleIngestResponse)
 async def ingest_rule(
     request: RuleIngestRequest, 
     db: Session = Depends(get_session)
 ):
     """
-    Ingests a natural language rule and saves it to the database.
-    """
-    new_rule = Rule(rule_nl=request.rule_nl)
-    db.add(new_rule)
-    db.commit()
-    db.refresh(new_rule)
-    
-    print(f"[RULE_INGEST] Saved: {new_rule.rule_nl} | ID: {new_rule.id} | TS: {new_rule.created_at}")
-    
-    return RuleIngestResponse(
-        status="success",
-        received_id=new_rule.id,
-        message="Rule received and saved successfully"
-    )
-
-
-@app.post("/user-action/ingest", response_model=UserActionIngestResponse)
-async def ingest_user_action(
-    request: UserActionIngestRequest, 
-    db: Session = Depends(get_session)
-):
-    """
-    Write-only ingest:
-    1. Persist raw input
+    Canonical ingestion endpoint (Write-only):
+    1. Persist rule text as a UserActionRun
     2. Set status to queued
     3. Return runId immediately
     """
     run = UserActionRun(
-        user_id=request.user_id,
-        action_type=request.action_type,
-        raw_input_text=request.raw_input_text,
+        user_id="default_user",  # Defaulting since RuleIngestRequest is natural language only
+        action_type="add_rule",
+        raw_input_text=request.rule_nl,
         status="queued"
     )
     db.add(run)
     db.commit()
     db.refresh(run)
-
-    return UserActionIngestResponse(
+    
+    print(f"[RULE_INGEST] Queued: {run.raw_input_text} | runId: {run.id}")
+    
+    return RuleIngestResponse(
         runId=str(run.id),
         status=run.status
     )

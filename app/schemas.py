@@ -56,16 +56,7 @@ class RuleIngestRequest(BaseModel):
 
 
 class RuleIngestResponse(BaseModel):
-    status: str
-    received_id: str
-    message: Optional[str] = None
-
-class UserActionIngestRequest(BaseModel):
-    user_id: str
-    action_type: str = "add_rule"
-    raw_input_text: str
-
-class UserActionIngestResponse(BaseModel):
     runId: str
     status: str
+
 
