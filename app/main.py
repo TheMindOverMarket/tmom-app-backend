@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends
 from sqlmodel import Session, select
 from app.database import get_session
-from app.models import UserActionRun
+from app.models import Rule
 from app.config import settings
 from app.lifecycle import on_startup, on_shutdown
 from app.broadcast import MarketStateBroadcaster
@@ -55,25 +55,25 @@ async def ingest_rule(
 ):
     """
     Canonical ingestion endpoint (Write-only):
-    1. Persist rule text as a UserActionRun
+    1. Persist rule text into the rules table
     2. Set status to queued
-    3. Return runId immediately
+    3. Return ruleId immediately
     """
-    run = UserActionRun(
-        user_id="default_user",  # Defaulting since RuleIngestRequest is natural language only
-        action_type="add_rule",
-        raw_input_text=request.rule_nl,
+    new_rule = Rule(
+        user_id=request.user_id,
+        playbook_id=request.playbook_id,
+        rule_text=request.rule_nl,
         status="queued"
     )
-    db.add(run)
+    db.add(new_rule)
     db.commit()
-    db.refresh(run)
+    db.refresh(new_rule)
     
-    print(f"[RULE_INGEST] Queued: {run.raw_input_text} | runId: {run.id}")
+    print(f"[RULE_INGEST] Queued: {new_rule.rule_text} | ruleId: {new_rule.id}")
     
     return RuleIngestResponse(
-        runId=str(run.id),
-        status=run.status
+        ruleId=str(new_rule.id),
+        status=new_rule.status
     )
 
 

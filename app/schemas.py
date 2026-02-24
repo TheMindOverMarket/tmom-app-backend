@@ -53,10 +53,12 @@ class TradeTriggerResponse(BaseModel):
 
 class RuleIngestRequest(BaseModel):
     rule_nl: str
+    user_id: Optional[str] = "default_user"
+    playbook_id: Optional[str] = "default_playbook"
 
 
 class RuleIngestResponse(BaseModel):
-    runId: str
+    ruleId: str
     status: str
 
 
