@@ -17,6 +17,7 @@ from app.schemas import (
     UserActionIngestResponse
 )
 from app.trading import place_alpaca_order
+from app.rule_engine.parser import parse_user_rule
 
 app = FastAPI(title=settings.app_name)
 
@@ -95,18 +96,8 @@ async def ingest_user_action(
     db.commit()
     db.refresh(run)
 
-    # 2. Call rule parsing / rule engine logic (Mock for now as no existing logic found)
-    # In a real scenario, this might call an LLM or a deterministic parser.
-    rule_output = {
-        "text_input": request.raw_input_text,
-        "rule_type": "conditional_trade",
-        "parsed_entities": {
-            "action": "buy" if "buy" in request.raw_input_text.lower() else "sell",
-            "symbol": "BTC/USD",
-            "condition": "price_cross"
-        },
-        "processed_at": datetime.now(timezone.utc).isoformat()
-    }
+    # 2. Call rule parsing / rule engine logic
+    rule_output = parse_user_rule(request.raw_input_text)
 
     # 3. Update the same row
     run.rule_output_json = rule_output
