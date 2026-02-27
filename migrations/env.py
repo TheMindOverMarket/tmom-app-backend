@@ -2,7 +2,7 @@ from logging.config import fileConfig
 from sqlalchemy import engine_from_config, pool
 from alembic import context
 from sqlmodel import SQLModel
-from app.models import User, Playbook  # Import models to register them with SQLModel
+from app.models import User, Playbook, Rule  # Import models to register them with SQLModel
 from app.config import settings
 
 # this is the Alembic Config object, which provides
