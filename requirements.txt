@@ -8,3 +8,4 @@ alpaca-trade-api
 sqlmodel
 alembic
 psycopg2-binary
+email-validator
