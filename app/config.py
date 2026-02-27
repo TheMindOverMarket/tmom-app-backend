@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     alpaca_api_secret: str = ""
     
     # Database
-    database_url: str = "sqlite:///./tmom.db"
+    database_url: str = ""
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

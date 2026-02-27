@@ -1,11 +1,10 @@
 from sqlmodel import create_engine, Session, SQLModel
 from app.config import settings
 
-# SQLite for local development, Postgres (Supabase/Neon) for production
-sqlite_url = settings.database_url
-connect_args = {"check_same_thread": False} if "sqlite" in sqlite_url else {}
+# Standardizing on Postgres (Supabase)
+database_url = settings.database_url
 
-engine = create_engine(sqlite_url, echo=True, connect_args=connect_args)
+engine = create_engine(database_url, echo=True)
 
 def create_db_and_tables():
     SQLModel.metadata.create_all(engine)
