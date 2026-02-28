@@ -9,3 +9,4 @@ sqlmodel
 alembic
 psycopg2-binary
 email-validator
+httpx

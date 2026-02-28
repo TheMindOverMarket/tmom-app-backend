@@ -12,8 +12,10 @@ class PlaybookCreate(BaseModel):
 
 class PlaybookUpdate(BaseModel):
     name: Optional[str] = None
+    original_nl_input: Optional[str] = None
     context: Optional[Dict[str, Any]] = None
     is_active: Optional[bool] = None
+
 
 class StartStreamsRequest(BaseModel):
     user_id: uuid.UUID
