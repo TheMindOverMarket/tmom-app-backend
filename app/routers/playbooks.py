@@ -16,12 +16,17 @@ async def create_playbook(playbook_in: PlaybookCreate, db: Session = Depends(get
     # Validate user exists
     user = db.get(User, playbook_in.user_id)
     if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+        logger.warning(f"[PLAYBOOK] Create failed: User {playbook_in.user_id} not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, 
+            detail=f"Cannot create playbook. User with ID {playbook_in.user_id} does not exist."
+        )
         
     playbook = Playbook(**playbook_in.dict())
     db.add(playbook)
     db.commit()
     db.refresh(playbook)
+    logger.info(f"[PLAYBOOK] New playbook created: {playbook.name} (ID: {playbook.id}) for User: {playbook.user_id}")
     return playbook
 
 @router.get("/playbooks/", response_model=List[Playbook])
@@ -35,14 +40,22 @@ async def list_playbooks(user_id: Optional[uuid.UUID] = None, db: Session = Depe
 async def get_playbook(id: uuid.UUID, db: Session = Depends(get_session)):
     playbook = db.get(Playbook, id)
     if not playbook:
-        raise HTTPException(status_code=404, detail="Playbook not found")
+        logger.warning(f"[PLAYBOOK] Fetch failed: Playbook {id} not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, 
+            detail=f"Playbook with ID {id} was not found."
+        )
     return playbook
 
 @router.patch("/playbooks/{id}", response_model=Playbook)
 async def update_playbook(id: uuid.UUID, playbook_in: PlaybookUpdate, db: Session = Depends(get_session)):
     playbook = db.get(Playbook, id)
     if not playbook:
-        raise HTTPException(status_code=404, detail="Playbook not found")
+        logger.warning(f"[PLAYBOOK] Update failed: Playbook {id} not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, 
+            detail=f"Cannot update playbook. Playbook with ID {id} does not exist."
+        )
     
     update_data = playbook_in.dict(exclude_unset=True)
     for key, value in update_data.items():
@@ -51,17 +64,24 @@ async def update_playbook(id: uuid.UUID, playbook_in: PlaybookUpdate, db: Sessio
     db.add(playbook)
     db.commit()
     db.refresh(playbook)
+    logger.info(f"[PLAYBOOK] Playbook updated: {id}")
     return playbook
 
 @router.delete("/playbooks/{id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_playbook(id: uuid.UUID, db: Session = Depends(get_session)):
     playbook = db.get(Playbook, id)
     if not playbook:
-        raise HTTPException(status_code=404, detail="Playbook not found")
+        logger.warning(f"[PLAYBOOK] Delete failed: Playbook {id} not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, 
+            detail=f"Cannot delete playbook. Playbook with ID {id} does not exist."
+        )
     
     db.delete(playbook)
     db.commit()
+    logger.info(f"[PLAYBOOK] Playbook deleted: {id}")
     return None
+
 
 @router.get("/users/{user_id}/playbooks", response_model=List[Playbook])
 async def list_user_playbooks(user_id: uuid.UUID, db: Session = Depends(get_session)):
