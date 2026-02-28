@@ -1,4 +1,5 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
+from fastapi.responses import JSONResponse
 from app.config import settings
 from app.lifecycle import on_startup, on_shutdown
 from app.broadcast import MarketStateBroadcaster
@@ -12,6 +13,16 @@ from app.routers import (
 )
 
 app = FastAPI(title=settings.app_name)
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    import traceback
+    print(f"Unhandled exception: {exc}")
+    traceback.print_exc()
+    return JSONResponse(
+        status_code=500,
+        content={"detail": f"Internal server error: {str(exc)}"}
+    )
 
 # Broadcasters for streaming
 market_broadcaster = MarketStateBroadcaster(name="MARKET_STATE")
