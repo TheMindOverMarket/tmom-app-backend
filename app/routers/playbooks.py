@@ -2,9 +2,12 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session, select
 from typing import List, Optional
 import uuid
+import logging
 from app.database import get_session
 from app.models import Playbook, User
-from app.schemas.playbooks import PlaybookCreate, PlaybookUpdate, StartStreamsRequest
+from app.schemas.playbooks import PlaybookCreate, PlaybookUpdate, StartStreamsRequest, StartStreamsResponse
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["playbooks"])
 
@@ -70,19 +73,28 @@ async def list_user_playbooks(user_id: uuid.UUID, db: Session = Depends(get_sess
     statement = select(Playbook).where(Playbook.user_id == user_id)
     return db.exec(statement).all()
 
-@router.post("/start_streams_creation", response_model=Playbook, status_code=status.HTTP_202_ACCEPTED)
+@router.post("/start_streams_creation", response_model=StartStreamsResponse, status_code=status.HTTP_202_ACCEPTED)
 async def start_streams_creation(request: StartStreamsRequest, db: Session = Depends(get_session)):
     # Validate playbook existence
     playbook = db.get(Playbook, request.playbook_id)
     if not playbook:
+        logger.warning(f"[WORKFLOW][START_STREAMS] Failed: Playbook {request.playbook_id} not found")
         raise HTTPException(status_code=404, detail="Playbook not found")
         
     # Validation: Ensure the user matches the playbook's owner
     if playbook.user_id != request.user_id:
+        logger.warning(f"[WORKFLOW][START_STREAMS] Unauthorized access attempt: User {request.user_id} tried to trigger Playbook {request.playbook_id}")
         raise HTTPException(status_code=403, detail="Playbook does not belong to the specified user")
         
+    # Log the successful trigger
+    logger.info(f"[WORKFLOW][START_STREAMS] Request accepted for Playbook: {playbook.id} (User: {playbook.user_id})")
+    
     # Placeholder: Future asynchronous stream creation logic goes here
     
-    # Returning the Playbook simply to acknowledge receipt 
-    return playbook
+    # Returning a canonical success response
+    return StartStreamsResponse(
+        status="accepted",
+        message="Stream creation workflow initiated successfully",
+        playbook=playbook
+    )
 

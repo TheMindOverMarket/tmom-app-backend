@@ -1,6 +1,7 @@
 from pydantic import BaseModel
 from typing import Optional, Dict, Any
 import uuid
+from app.models import Playbook
 
 class PlaybookCreate(BaseModel):
     name: str
@@ -17,3 +18,8 @@ class PlaybookUpdate(BaseModel):
 class StartStreamsRequest(BaseModel):
     user_id: uuid.UUID
     playbook_id: uuid.UUID
+
+class StartStreamsResponse(BaseModel):
+    status: str
+    message: str
+    playbook: Playbook
