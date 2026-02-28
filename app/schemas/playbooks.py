@@ -5,6 +5,7 @@ import uuid
 class PlaybookCreate(BaseModel):
     name: str
     user_id: uuid.UUID
+    original_nl_input: str
     is_active: bool = True
 
 class PlaybookUpdate(BaseModel):

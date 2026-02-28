@@ -55,6 +55,9 @@ class Playbook(SQLModel, table=True):
         nullable=False
     )
     name: str = Field(nullable=False)
+    original_nl_input: str = Field(
+        sa_column=Column(Text, nullable=False)
+    )
     is_active: bool = Field(default=True, nullable=False)
     
     created_at: datetime = Field(
