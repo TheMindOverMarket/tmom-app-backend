@@ -1,7 +1,9 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, Depends, status
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+import logging
 from app.config import settings
+from app.database import get_session
 from app.lifecycle import on_startup, on_shutdown
 from app.broadcast import MarketStateBroadcaster
 from app.routers import (
@@ -13,7 +15,18 @@ from app.routers import (
     market_data
 )
 
+
+
+# Configure professional logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+logger = logging.getLogger(__name__)
+
 app = FastAPI(title=settings.app_name)
+
+
 
 # Strict Canonical CORS Middleware Configuration
 app.add_middleware(
@@ -30,11 +43,17 @@ app.add_middleware(
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     import traceback
-    print(f"Unhandled exception: {exc}")
-    traceback.print_exc()
+    # Log the full stack trace internally
+    logger.error(f"Unhandled exception: {exc}")
+    logger.error(traceback.format_exc())
+    
+    # Return a clean error message to the client
     return JSONResponse(
-        status_code=500,
-        content={"detail": f"Internal server error: {str(exc)}"}
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={
+            "detail": "An internal server error occurred. Our team has been notified.",
+            "type": exc.__class__.__name__
+        }
     )
 
 # Broadcasters for streaming
@@ -61,11 +80,22 @@ def root():
     }
 
 @app.get("/health")
-async def health() -> dict:
+async def health(db = Depends(get_session)) -> dict:
+    from sqlmodel import text
+    try:
+        # Simple query to test DB connectivity
+        db.execute(text("SELECT 1"))
+        db_status = "connected"
+    except Exception as e:
+        logger.error(f"Health check DB failure: {e}")
+        db_status = "unavailable"
+
     return {
-        "status": "ok",
-        "environment": settings.environment
+        "status": "ok" if db_status == "connected" else "degraded",
+        "environment": settings.environment,
+        "database": db_status
     }
+
 
 @app.websocket("/ws/market-state")
 async def market_state_ws(websocket: WebSocket):
