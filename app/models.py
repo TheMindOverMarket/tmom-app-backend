@@ -58,6 +58,10 @@ class Playbook(SQLModel, table=True):
     original_nl_input: str = Field(
         sa_column=Column(Text, nullable=False)
     )
+    market_data_fields: Optional[Dict[str, Any]] = Field(
+        default=None, 
+        sa_column=Column(JSON)
+    )
     is_active: bool = Field(default=True, nullable=False)
     
     created_at: datetime = Field(
