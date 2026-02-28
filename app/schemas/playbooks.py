@@ -5,7 +5,7 @@ from app.models import Playbook
 
 class PlaybookCreate(BaseModel):
     name: str
-    user_id: uuid.UUID
+    user_id: uuid.UUID = uuid.UUID("1d4d88c7-bcd1-4813-8f34-59c9776e5b3f")
     original_nl_input: str
     context: Optional[Dict[str, Any]] = None
     is_active: bool = True
@@ -18,8 +18,9 @@ class PlaybookUpdate(BaseModel):
 
 
 class StartStreamsRequest(BaseModel):
-    user_id: uuid.UUID
+    user_id: uuid.UUID = uuid.UUID("1d4d88c7-bcd1-4813-8f34-59c9776e5b3f")
     playbook_id: uuid.UUID
+
 
 class StartStreamsResponse(BaseModel):
     status: str
