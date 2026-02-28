@@ -4,7 +4,7 @@ from typing import List, Optional
 import uuid
 from app.database import get_session
 from app.models import Playbook, User
-from app.schemas.playbooks import PlaybookCreate, PlaybookUpdate
+from app.schemas.playbooks import PlaybookCreate, PlaybookUpdate, StartStreamsRequest
 
 router = APIRouter(tags=["playbooks"])
 
@@ -69,3 +69,20 @@ async def list_user_playbooks(user_id: uuid.UUID, db: Session = Depends(get_sess
         
     statement = select(Playbook).where(Playbook.user_id == user_id)
     return db.exec(statement).all()
+
+@router.post("/start_streams_creation", response_model=Playbook, status_code=status.HTTP_202_ACCEPTED)
+async def start_streams_creation(request: StartStreamsRequest, db: Session = Depends(get_session)):
+    # Validate playbook existence
+    playbook = db.get(Playbook, request.playbook_id)
+    if not playbook:
+        raise HTTPException(status_code=404, detail="Playbook not found")
+        
+    # Validation: Ensure the user matches the playbook's owner
+    if playbook.user_id != request.user_id:
+        raise HTTPException(status_code=403, detail="Playbook does not belong to the specified user")
+        
+    # Placeholder: Future asynchronous stream creation logic goes here
+    
+    # Returning the Playbook simply to acknowledge receipt 
+    return playbook
+

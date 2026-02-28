@@ -13,3 +13,7 @@ class PlaybookUpdate(BaseModel):
     name: Optional[str] = None
     context: Optional[Dict[str, Any]] = None
     is_active: Optional[bool] = None
+
+class StartStreamsRequest(BaseModel):
+    user_id: uuid.UUID
+    playbook_id: uuid.UUID
