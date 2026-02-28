@@ -7,7 +7,8 @@ from app.routers import (
     playbooks, 
     rules, 
     conditions, 
-    condition_edges
+    condition_edges,
+    market_data
 )
 
 app = FastAPI(title=settings.app_name)
@@ -25,6 +26,7 @@ app.include_router(playbooks.router)
 app.include_router(rules.router)
 app.include_router(conditions.router)
 app.include_router(condition_edges.router)
+app.include_router(market_data.router)
 
 @app.get("/")
 def root():
@@ -43,6 +45,15 @@ async def health() -> dict:
 
 @app.websocket("/ws/market-state")
 async def market_state_ws(websocket: WebSocket):
+    await market_broadcaster.connect(websocket)
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        await market_broadcaster.disconnect(websocket)
+
+@app.websocket("/ws/market-data")
+async def market_data_ws(websocket: WebSocket):
     await market_broadcaster.connect(websocket)
     try:
         while True:
