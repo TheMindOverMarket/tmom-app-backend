@@ -6,9 +6,9 @@ from app.database import get_session
 from app.models import Condition, Rule
 from app.schemas.conditions import ConditionCreate, ConditionUpdate
 
-router = APIRouter(prefix="/conditions", tags=["conditions"])
+router = APIRouter(tags=["conditions"])
 
-@router.post("/", response_model=Condition, status_code=status.HTTP_201_CREATED)
+@router.post("/conditions/", response_model=Condition, status_code=status.HTTP_201_CREATED)
 async def create_condition(condition_in: ConditionCreate, db: Session = Depends(get_session)):
     # Validate rule exists
     rule = db.get(Rule, condition_in.rule_id)
@@ -21,21 +21,21 @@ async def create_condition(condition_in: ConditionCreate, db: Session = Depends(
     db.refresh(condition)
     return condition
 
-@router.get("/", response_model=List[Condition])
+@router.get("/conditions/", response_model=List[Condition])
 async def list_conditions(rule_id: Optional[uuid.UUID] = None, db: Session = Depends(get_session)):
     statement = select(Condition)
     if rule_id:
         statement = statement.where(Condition.rule_id == rule_id)
     return db.exec(statement).all()
 
-@router.get("/{id}", response_model=Condition)
+@router.get("/conditions/{id}", response_model=Condition)
 async def get_condition(id: uuid.UUID, db: Session = Depends(get_session)):
     condition = db.get(Condition, id)
     if not condition:
         raise HTTPException(status_code=404, detail="Condition not found")
     return condition
 
-@router.patch("/{id}", response_model=Condition)
+@router.patch("/conditions/{id}", response_model=Condition)
 async def update_condition(id: uuid.UUID, condition_in: ConditionUpdate, db: Session = Depends(get_session)):
     condition = db.get(Condition, id)
     if not condition:
@@ -50,7 +50,7 @@ async def update_condition(id: uuid.UUID, condition_in: ConditionUpdate, db: Ses
     db.refresh(condition)
     return condition
 
-@router.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/conditions/{id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_condition(id: uuid.UUID, db: Session = Depends(get_session)):
     condition = db.get(Condition, id)
     if not condition:
@@ -59,3 +59,13 @@ async def delete_condition(id: uuid.UUID, db: Session = Depends(get_session)):
     db.delete(condition)
     db.commit()
     return None
+
+@router.get("/rules/{rule_id}/conditions", response_model=List[Condition])
+async def list_rule_conditions(rule_id: uuid.UUID, db: Session = Depends(get_session)):
+    # Validate rule existence
+    rule = db.get(Rule, rule_id)
+    if not rule:
+        raise HTTPException(status_code=404, detail="Rule not found")
+        
+    statement = select(Condition).where(Condition.rule_id == rule_id)
+    return db.exec(statement).all()

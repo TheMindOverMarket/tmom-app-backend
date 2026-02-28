@@ -6,9 +6,9 @@ from app.database import get_session
 from app.models import Rule, Playbook
 from app.schemas.rules import RuleCreate, RuleUpdate
 
-router = APIRouter(prefix="/rules", tags=["rules"])
+router = APIRouter(tags=["rules"])
 
-@router.post("/", response_model=Rule, status_code=status.HTTP_201_CREATED)
+@router.post("/rules/", response_model=Rule, status_code=status.HTTP_201_CREATED)
 async def create_rule(rule_in: RuleCreate, db: Session = Depends(get_session)):
     # Validate playbook exists
     playbook = db.get(Playbook, rule_in.playbook_id)
@@ -21,21 +21,21 @@ async def create_rule(rule_in: RuleCreate, db: Session = Depends(get_session)):
     db.refresh(rule)
     return rule
 
-@router.get("/", response_model=List[Rule])
+@router.get("/rules/", response_model=List[Rule])
 async def list_rules(playbook_id: Optional[uuid.UUID] = None, db: Session = Depends(get_session)):
     statement = select(Rule)
     if playbook_id:
         statement = statement.where(Rule.playbook_id == playbook_id)
     return db.exec(statement).all()
 
-@router.get("/{id}", response_model=Rule)
+@router.get("/rules/{id}", response_model=Rule)
 async def get_rule(id: uuid.UUID, db: Session = Depends(get_session)):
     rule = db.get(Rule, id)
     if not rule:
         raise HTTPException(status_code=404, detail="Rule not found")
     return rule
 
-@router.patch("/{id}", response_model=Rule)
+@router.patch("/rules/{id}", response_model=Rule)
 async def update_rule(id: uuid.UUID, rule_in: RuleUpdate, db: Session = Depends(get_session)):
     rule = db.get(Rule, id)
     if not rule:
@@ -50,7 +50,7 @@ async def update_rule(id: uuid.UUID, rule_in: RuleUpdate, db: Session = Depends(
     db.refresh(rule)
     return rule
 
-@router.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/rules/{id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_rule(id: uuid.UUID, db: Session = Depends(get_session)):
     rule = db.get(Rule, id)
     if not rule:
@@ -59,3 +59,13 @@ async def delete_rule(id: uuid.UUID, db: Session = Depends(get_session)):
     db.delete(rule)
     db.commit()
     return None
+
+@router.get("/playbooks/{playbook_id}/rules", response_model=List[Rule])
+async def list_playbook_rules(playbook_id: uuid.UUID, db: Session = Depends(get_session)):
+    # Validate playbook existence
+    playbook = db.get(Playbook, playbook_id)
+    if not playbook:
+        raise HTTPException(status_code=404, detail="Playbook not found")
+        
+    statement = select(Rule).where(Rule.playbook_id == playbook_id)
+    return db.exec(statement).all()
