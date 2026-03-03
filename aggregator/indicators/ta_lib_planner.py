@@ -21,7 +21,7 @@ class IndicatorExecutionPlan:
 
 def build_talib_execution_plans(ta_lib_metrics: List[Dict[str, Any]]) -> List[IndicatorExecutionPlan]:
     """
-    Validates TA-Lib metrics from playbook context and produces execution plans.
+    Validates TA-Lib metrics from playbook context and produces validated indicator execution plans.
     
     Args:
         ta_lib_metrics: List of metric definitions from playbook.context["ta_lib_metrics"].
@@ -30,91 +30,92 @@ def build_talib_execution_plans(ta_lib_metrics: List[Dict[str, Any]]) -> List[In
         A list of IndicatorExecutionPlan objects.
         
     Raises:
-        ValueError: If a function name is invalid or provided parameters are not supported.
+        ValueError: If a function name is invalid or invalid parameters are provided.
     """
     plans: List[IndicatorExecutionPlan] = []
     
-    # Get all available functions for pre-validation
+    # 1. Name Validation using uppercase comparison
     available_functions = [f.upper() for f in talib.get_functions()]
     
     for metric in ta_lib_metrics:
         name = metric.get("name")
         if not name:
-            logger.warning("Found metric entry without a name. Skipping.")
+            logger.debug("Skipping metric entry with empty name.")
             continue
             
-        # 1. Validate "name" exists in TA-Lib
         if name.upper() not in available_functions:
-            logger.error(f"TA-Lib function '{name}' does not exist.")
-            raise ValueError(f"TA-Lib function '{name}' does not exist.")
+            msg = f"Invalid TA-Lib function name: {name}"
+            logger.error(msg)
+            raise ValueError(msg)
             
-        # 2. Use talib.abstract.Function(name) to introspect
+        # 2. Abstract Function Introspection
         try:
             abs_func = abstract.Function(name)
         except Exception as e:
-            logger.error(f"Failed to initialize TA-Lib abstract function '{name}': {e}")
-            raise ValueError(f"Failed to initialize TA-Lib abstract function '{name}': {e}")
+            msg = f"Failed to initialize TA-Lib abstract function '{name}': {e}"
+            logger.error(msg)
+            raise ValueError(msg)
             
         info = abs_func.info
-        
-        # 3. Normalize params
-        # a) If metric has "timeperiod", include it in params.
-        # b) If metric has "params", merge dict into params.
-        # c) If both exist, merge with explicit params taking priority.
+        allowed_params = info.get("parameters", {})
+        input_names_dict = info.get("input_names", {})
+        output_names = info.get("output_names", [])
+
+        # 3. Parameter Normalization
         normalized_params: Dict[str, Any] = {}
         
-        if "timeperiod" in metric and metric["timeperiod"] is not None:
+        # metric.timeperiod handled if present
+        if metric.get("timeperiod") is not None:
             normalized_params["timeperiod"] = metric["timeperiod"]
             
+        # metric.params handled if present (merging and overriding timeperiod)
         extra_params = metric.get("params")
         if isinstance(extra_params, dict):
             normalized_params.update(extra_params)
             
-        # 4. Validate that provided params are valid for that function
-        allowed_params = info.get("parameters", {})
-        for p_name in normalized_params:
-            if p_name not in allowed_params:
-                logger.error(f"Invalid parameter '{p_name}' for TA-Lib function '{name}'.")
-                raise ValueError(f"Invalid parameter '{p_name}' for TA-Lib function '{name}'.")
+        # 4. Parameter Validation
+        for p_key in normalized_params:
+            if p_key not in allowed_params:
+                msg = f"Invalid parameter '{p_key}' provided for function '{name}'"
+                logger.error(msg)
+                raise ValueError(msg)
         
-        # 5. Determine required_inputs from abstract API
-        # input_names is typically an OrderedDict like {'price': 'close'} or {'high': 'high', ...}
-        # We need the values (the column names).
+        # 5. Required Inputs extraction (Flatten, Unique, Lowercase)
         required_inputs: List[str] = []
-        input_names_dict = info.get("input_names", {})
         for val in input_names_dict.values():
             if isinstance(val, (list, tuple)):
-                required_inputs.extend([str(v) for v in val])
+                required_inputs.extend([str(v).lower() for v in val])
             else:
-                required_inputs.append(str(val))
+                required_inputs.append(str(val).lower())
         
-        # Ensure unique inputs
-        required_inputs = sorted(list(set(required_inputs)))
-        
-        # 6. Determine output field names
-        output_names = info.get("output_names", [])
-        
-        if len(output_names) == 1:
-            # For single-output functions: output_fields = [f"{name}_{primary_param_signature}"]
-            # Generate signature from normalized_params values.
-            # If no parameters provided/applicable, use just the name or default timeperiod.
-            if normalized_params:
-                # Use sorted keys for deterministic signature
-                sig_values = [str(normalized_params[k]) for k in sorted(normalized_params.keys())]
-                sig = "_".join(sig_values)
-                output_fields = [f"{name}_{sig}"]
-            else:
-                # If no params provided, check if function has a default timeperiod to include
-                default_timeperiod = allowed_params.get("timeperiod")
-                if default_timeperiod is not None:
-                    output_fields = [f"{name}_{default_timeperiod}"]
-                else:
-                    output_fields = [f"{name}"]
-        else:
-            # For multi-output functions: output_fields = list of abstract function output names
+        # Unique list preserving order of first appearance
+        seen = set()
+        unique_inputs = []
+        for inp in required_inputs:
+            if inp not in seen:
+                unique_inputs.append(inp)
+                seen.add(inp)
+        required_inputs = unique_inputs
+
+        # 6. Output Fields Logic
+        output_fields: List[str] = []
+        if output_names and len(output_names) > 1:
+            # Multi-output: use abstract names
             output_fields = list(output_names)
-            
-        # 7. Add to plans
+        elif output_names and len(output_names) == 1:
+            # Single-output
+            if normalized_params:
+                # Deterministic suffix: sorted keys, join values with "_"
+                sorted_keys = sorted(normalized_params.keys())
+                suffix = "_".join(str(normalized_params[k]) for k in sorted_keys)
+                output_fields = [f"{name}_{suffix}"]
+            else:
+                output_fields = [name]
+        else:
+            # No explicit output names
+            output_fields = [name]
+
+        # 7. Execution Plan
         plans.append(IndicatorExecutionPlan(
             name=name,
             function=abs_func,
@@ -123,6 +124,6 @@ def build_talib_execution_plans(ta_lib_metrics: List[Dict[str, Any]]) -> List[In
             output_fields=output_fields
         ))
         
-        logger.debug(f"Planned indicator {name}: inputs={required_inputs}, outputs={output_fields}")
+        logger.debug(f"Plan generated for {name}: inputs={required_inputs}, outputs={output_fields}")
         
     return plans
