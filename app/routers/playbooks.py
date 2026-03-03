@@ -6,8 +6,6 @@ import logging
 from app.database import get_session
 from app.models import Playbook, User
 from app.schemas.playbooks import PlaybookCreate, PlaybookUpdate, StartStreamsRequest, StartStreamsResponse
-from aggregator.indicators.ta_lib_planner import build_talib_execution_plans
-from aggregator.indicators.talib_metric_engine import TALibMetricEngine
 import app.lifecycle
 
 logger = logging.getLogger(__name__)
@@ -112,21 +110,27 @@ async def start_streams_creation(request: StartStreamsRequest, db: Session = Dep
     # Log the successful trigger
     logger.info(f"[WORKFLOW][START_STREAMS] Request accepted for Playbook: {playbook.id} (User: {playbook.user_id})")
     
-    # Dynamically build TALibMetricEngine if metrics are defined
+    # Register indicators if metrics are defined
     context = playbook.context or {}
     ta_lib_metrics = context.get("ta_lib_metrics", [])
 
+    # Clear previous indicators before re-registering
+    app.lifecycle.indicator_registry.clear()
+
     if ta_lib_metrics:
         try:
-            execution_plans = build_talib_execution_plans(ta_lib_metrics)
-            app.lifecycle.active_talib_metric_engine = TALibMetricEngine(execution_plans)
-            logger.info(f"[WORKFLOW][START_STREAMS] TALibMetricEngine built with {len(execution_plans)} plans")
+            for metric in ta_lib_metrics:
+                app.lifecycle.indicator_registry.register(
+                    name=metric.get("name"),
+                    timeframe=metric.get("timeframe", "1m"),
+                    params=metric.get("params", {})
+                )
+            logger.info(f"[WORKFLOW][START_STREAMS] {len(ta_lib_metrics)} indicators registered")
         except Exception as e:
-            logger.error(f"[WORKFLOW][START_STREAMS] Failed to build TALibMetricEngine: {e}")
+            logger.error(f"[WORKFLOW][START_STREAMS] Failed to register indicators: {e}")
             raise HTTPException(status_code=400, detail=f"Invalid indicator configuration: {e}")
     else:
-        app.lifecycle.active_talib_metric_engine = None
-        logger.info("[WORKFLOW][START_STREAMS] No TA-Lib metrics defined, engine cleared")
+        logger.info("[WORKFLOW][START_STREAMS] No TA-Lib metrics defined, registry cleared")
     
     # Placeholder: Future asynchronous stream creation logic goes here
     

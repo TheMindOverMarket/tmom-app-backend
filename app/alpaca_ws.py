@@ -3,7 +3,8 @@ import json
 import logging
 import os
 import websockets
-from datetime import datetime
+from datetime import datetime, timezone
+from aggregator.models import NormalizedTick
 import app.lifecycle
 
 logger = logging.getLogger(__name__)
@@ -79,88 +80,116 @@ class AlpacaCryptoStream(AlpacaBaseStream):
             await self.authenticate()
             await self._subscribe()
 
+            # Add a background task for periodic broadcasting (1s)
+            broadcast_task = asyncio.create_task(self._broadcast_loop())
+
             while self._running:
                 try:
-                    # Check running state before waiting to allow immediate exit on stop signal
                     if not self._running:
                         break
                         
-                    # print("[ALPACA][WAITING] ...") # Reduced verbosity
                     message = await ws.recv()
-                    print(f"[ALPACA][RECEIVED_RAW] {message}")
-                    
-                    # ... [parsing logic unchanged] ... 
+                    # print(f"[ALPACA][RECEIVED_RAW] {message}") # Verbose
                     
                     try:
-                        print("[ALPACA][PARSE] Parsing incoming message")
                         data = json.loads(message)
                         if isinstance(data, list):
                             for obj in data:
-                                if obj.get("T") == "q":
-                                    bp = obj.get("bp")
-                                    ap = obj.get("ap")
-                                    # ...
+                                msg_type = obj.get("T")
+                                if msg_type in ["q", "t"]:
                                     symbol = obj.get("S")
-                                    logger.debug(f"[ALPACA][QUOTE] symbol={symbol} bid={bp} ask={ap}")
+                                    ts_str = obj.get("t")
+                                    
+                                    # Parse timestamp (Strictly from data stream)
+                                    if not ts_str:
+                                        continue
+                                    ts = datetime.fromisoformat(ts_str.replace('Z', '+00:00'))
 
-                                    if bp is not None and ap is not None:
-                                        # Legacy timestamp format for downstream compatibility
-                                        current_time = datetime.utcnow().isoformat() + "Z"
-                                        # Internal timestamp for age calculation
-                                        ts_ms = datetime.utcnow().timestamp() * 1000
-                                        
-                                        # mid_price variable missing in provided snippet context but assumed present in logic
-                                        mid_price = (bp + ap) / 2
-                                        
-                                        # Dynamic TA-Lib Metrics Injection
-                                        metrics = {}
-                                        if app.lifecycle.active_talib_metric_engine:
-                                            metrics = app.lifecycle.active_talib_metric_engine.update_and_compute(
-                                                symbol,
-                                                mid_price
-                                            )
-                                        
-                                        logger.debug(f"[MARKET_STATE][BUILD] symbol={symbol} price={mid_price} time={current_time}")
+                                    price = 0.0
+                                    size = 0.0
+                                    
+                                    if msg_type == "q":
+                                        bp = obj.get("bp")
+                                        ap = obj.get("ap")
+                                        if bp is not None and ap is not None:
+                                            price = (bp + ap) / 2
+                                        size = (obj.get("bs", 0) + obj.get("as", 0)) / 2
+                                    else: # Trade
+                                        price = obj.get("p", 0.0)
+                                        size = obj.get("s", 0.0)
 
-                                        # Event for Broadcast (Strict legacy schema: no raw_timestamp_ms)
-                                        broadcast_event = {
-                                            "event_type": "market_state",
-                                            "symbol": symbol, 
-                                            "current_time": current_time,
-                                            "price": mid_price
-                                        }
+                                    if price > 0:
+                                        # 1️⃣ Normalize Ingestion Layer
+                                        tick = NormalizedTick(
+                                            symbol=symbol,
+                                            timestamp=ts,
+                                            price=price,
+                                            size=size
+                                        )
 
-                                        if metrics:
-                                            broadcast_event["metrics"] = metrics
-                                        
-                                        # Event for Cache (Includes raw_timestamp_ms for internal use)
-                                        cached_event = broadcast_event.copy()
-                                        cached_event["raw_timestamp_ms"] = ts_ms
-                                        
-                                        # Update cache for context attachment
-                                        self.latest_market_state[symbol] = cached_event
-                                        
-                                        
-                                        logger.debug("[MARKET_STATE][BROADCAST] Broadcasting market_state event")
-                                        await market_broadcaster.broadcast(json.dumps(broadcast_event))
+                                        # 2️⃣ Canonical Candle Engine (Injest Tick)
+                                        import app.lifecycle
+                                        if app.lifecycle.candle_engine:
+                                            app.lifecycle.candle_engine.ingest_tick(tick)
+                                            
+                                            # Update local cache for immediate snapshot access
+                                            state = app.lifecycle.candle_engine.get_symbol_state(symbol)
+                                            # 5️⃣ MarketState Snapshot (No longer inject legacy raw_timestamp_ms)
+                                            snapshot = state.get_snapshot()
+                                            self.latest_market_state[symbol] = snapshot
+
+                                            # Tick-by-tick logic (Behavioral) can go here
+                                            # But indicators are NOT recalculated here.
+
                                 else:
-                                    logger.debug("[ALPACA][IGNORED] Message type not relevant")
+                                    logger.debug(f"[ALPACA][IGNORED] Message type {msg_type} not relevant")
                     except Exception as e:
-                        print(f"Error processing message logic: {e}")
+                        logger.error(f"Error processing message logic: {e}")
                         
                 except asyncio.CancelledError:
-                    # Expected when task is cancelled during app shutdown
-                    print("[ALPACA][CANCELLED] Task cancelled, exiting loop")
                     break
                 except websockets.ConnectionClosed:
-                    # Expected when socket is closed explicitly by stop()
-                    if self._running:
-                        print("[ALPACA][CLOSED] Connection closed unexpectedly")
-                    else:
-                        print("[ALPACA][CLOSED] Connection closed cleanly (Intentional)")
                     break
                 except Exception as e:
-                    print(f"[ALPACA][ERROR] Loop error: {e}")
+                    logger.error(f"[ALPACA][ERROR] Loop error: {e}")
+            
+            broadcast_task.cancel()
+        
+        print(f"[{self.__class__.__name__}][EXITED_CLEANLY] Background task finished")
+
+    async def _broadcast_loop(self) -> None:
+        """
+        6️⃣ Broadcast Behavior (UNCHANGED FREQUENCY)
+        Decoupled broadcast loop running at ~1Hz.
+        """
+        from app.main import market_broadcaster
+        
+        while self._running:
+            try:
+                await asyncio.sleep(1.0)
+                
+                for symbol, snapshot in self.latest_market_state.items():
+                    # Legacy timestamp for frontend compatibility
+                    # 6️⃣ Broadcast Behavior - Deterministic Timestamp
+                    raw_ts = snapshot["last_tick_timestamp_ms"]
+                    current_time_str = datetime.fromtimestamp(raw_ts / 1000, timezone.utc).isoformat().replace("+00:00", "Z")
+                    
+                    broadcast_event = {
+                        "event_type": "market_state",
+                        "symbol": symbol,
+                        "current_time": current_time_str,
+                        "price": snapshot["last_price"],
+                        "high": snapshot["current_candle_high"],
+                        "low": snapshot["current_candle_low"],
+                        "metrics": snapshot["indicator_values"].get("1m", {}), # Default to 1m metrics
+                        "indicator_values": snapshot["indicator_values"] # Full details
+                    }
+                    
+                    await market_broadcaster.broadcast(json.dumps(broadcast_event))
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"[BROADCAST_LOOP][ERROR] {e}")
         
         print(f"[{self.__class__.__name__}][EXITED_CLEANLY] Background task finished")
 
@@ -266,7 +295,7 @@ class AlpacaTradingStream(AlpacaBaseStream):
                                     latest_state = crypto_stream_instance.latest_market_state.get(symbol)
 
                                     if latest_state:
-                                        market_ts = latest_state.get("raw_timestamp_ms")
+                                        market_ts = latest_state["last_tick_timestamp_ms"]
                                         activity_ts = normalized_event.timestamp_server
 
                                         if market_ts and market_ts <= activity_ts:
