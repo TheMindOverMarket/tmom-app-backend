@@ -4,6 +4,7 @@ import logging
 import os
 import websockets
 from datetime import datetime
+import app.lifecycle
 
 logger = logging.getLogger(__name__)
 
@@ -100,7 +101,7 @@ class AlpacaCryptoStream(AlpacaBaseStream):
                                     ap = obj.get("ap")
                                     # ...
                                     symbol = obj.get("S")
-                                    print(f"[ALPACA][QUOTE] symbol={symbol} bid={bp} ask={ap}")
+                                    logger.debug(f"[ALPACA][QUOTE] symbol={symbol} bid={bp} ask={ap}")
 
                                     if bp is not None and ap is not None:
                                         # Legacy timestamp format for downstream compatibility
@@ -111,15 +112,26 @@ class AlpacaCryptoStream(AlpacaBaseStream):
                                         # mid_price variable missing in provided snippet context but assumed present in logic
                                         mid_price = (bp + ap) / 2
                                         
-                                        print(f"[MARKET_STATE][BUILD] symbol={symbol} price={mid_price} time={current_time}")
+                                        # Dynamic TA-Lib Metrics Injection
+                                        metrics = {}
+                                        if app.lifecycle.active_talib_metric_engine:
+                                            metrics = app.lifecycle.active_talib_metric_engine.update_and_compute(
+                                                symbol,
+                                                mid_price
+                                            )
+                                        
+                                        logger.debug(f"[MARKET_STATE][BUILD] symbol={symbol} price={mid_price} time={current_time}")
 
                                         # Event for Broadcast (Strict legacy schema: no raw_timestamp_ms)
                                         broadcast_event = {
                                             "event_type": "market_state",
-                                            "symbol": "BTC", 
+                                            "symbol": symbol, 
                                             "current_time": current_time,
                                             "price": mid_price
                                         }
+
+                                        if metrics:
+                                            broadcast_event["metrics"] = metrics
                                         
                                         # Event for Cache (Includes raw_timestamp_ms for internal use)
                                         cached_event = broadcast_event.copy()
@@ -129,10 +141,10 @@ class AlpacaCryptoStream(AlpacaBaseStream):
                                         self.latest_market_state[symbol] = cached_event
                                         
                                         
-                                        print("[MARKET_STATE][BROADCAST] Broadcasting market_state event")
+                                        logger.debug("[MARKET_STATE][BROADCAST] Broadcasting market_state event")
                                         await market_broadcaster.broadcast(json.dumps(broadcast_event))
                                 else:
-                                    print("[ALPACA][IGNORED] Message type not relevant")
+                                    logger.debug("[ALPACA][IGNORED] Message type not relevant")
                     except Exception as e:
                         print(f"Error processing message logic: {e}")
                         
