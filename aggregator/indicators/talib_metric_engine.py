@@ -7,7 +7,7 @@ from aggregator.indicators.ta_lib_planner import IndicatorExecutionPlan
 
 logger = logging.getLogger(__name__)
 
-class IndicatorEngine:
+class TALibMetricEngine:
     """
     Runtime engine that executes TA-Lib indicators on rolling close data.
     Phase 1: Close-only indicators supported.
@@ -15,7 +15,7 @@ class IndicatorEngine:
 
     def __init__(self, execution_plans: List[IndicatorExecutionPlan]) -> None:
         if not execution_plans:
-            raise ValueError("IndicatorEngine requires at least one execution plan.")
+            raise ValueError("TALibMetricEngine requires at least one execution plan.")
 
         # Validate close-only compatibility
         for plan in execution_plans:

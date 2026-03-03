@@ -2,6 +2,7 @@ import asyncio
 from typing import Optional
 from dotenv import load_dotenv
 from app.alpaca_ws import AlpacaCryptoStream, AlpacaTradingStream
+from aggregator.indicators.talib_metric_engine import TALibMetricEngine
 
 load_dotenv()
 
@@ -9,6 +10,7 @@ _stream_task: Optional[asyncio.Task] = None
 _trading_stream_task: Optional[asyncio.Task] = None
 _stream: Optional[AlpacaCryptoStream] = None
 _trading_stream: Optional[AlpacaTradingStream] = None
+active_talib_metric_engine: Optional[TALibMetricEngine] = None
 
 
 async def on_startup() -> None:
