@@ -69,16 +69,11 @@ class IndicatorRegistry:
         results = {}
         for plan in timeframe_plans:
             try:
-                # Select only required inputs
-                kwargs = {inp: input_map[inp] for inp in plan.required_inputs if inp in input_map}
-                
-                # Check if we have enough data
-                # TA-Lib functions usually need at least some lookback
-                # Minimal check:
-                if len(closes) < 2: continue
-
-                # Execute TA-Lib function
-                res = plan.function(**kwargs, **plan.params)
+                # TA-Lib Abstract API: pass the input map and parameters.
+                # The abstract function intelligently selects the required fields (open, high, low, close, volume)
+                # from the input map. This resolves the 'Not enough price arguments' error caused by 
+                # attempting to pass price arrays as individual keyword arguments.
+                res = plan.function(input_map, **plan.params)
 
                 # Handle multi-output vs single-output
                 if isinstance(res, (list, tuple, np.ndarray)):
