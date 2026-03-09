@@ -65,25 +65,45 @@ class IndicatorRegistry:
             "volume": volumes
         }
 
+        input_map.update({
+            "price": closes,
+            "real": closes
+        })
+
         import talib
         timeframe_plans = self.plans.get(timeframe, [])
         results = {}
         for plan in timeframe_plans:
             try:
-                # Use the raw talib function with positional arguments for price inputs.
-                # This bypasses the Abstract API's dictionary-mapping logic which is failing 
-                # in this environment. The order in plan.required_inputs is guaranteed 
-                # (via ta_lib_planner.py) to match the underlying C-function signature.
-                func = getattr(talib, plan.name.upper())
-                input_arrays = [input_map[inp] for inp in plan.required_inputs]
+                # 1. Prepare raw positional arrays using the planner's guaranteed inputs
+                # Filter out missing keys to avoid KeyError just in case
+                input_arrays = [input_map[inp] for inp in plan.required_inputs if inp in input_map]
                 
-                # Check if we have enough data (at least equal to the timeperiod if specified)
-                # Most indicators need at least N + 1 bars to be stable.
                 min_required = plan.params.get("timeperiod", 2)
                 if len(closes) < min_required:
                     continue
 
-                res = func(*input_arrays, **plan.params)
+                res = None
+                
+                # Attempt 1: Raw function invocation
+                func = getattr(talib, plan.name.upper(), None)
+                if func is not None:
+                    try:
+                        res = func(*input_arrays, **plan.params)
+                    except Exception as e1:
+                        # Attempt 2: Abstract function with dictionary
+                        try:
+                            res = plan.function(input_map, **plan.params)
+                        except Exception as e2:
+                            # Attempt 3: Abstract function with positional arrays
+                            try:
+                                res = plan.function(*input_arrays, **plan.params)
+                            except Exception as e3:
+                                logger.error(f"[TALIB] All invocation methods failed for {plan.name}. Raw: {e1} | AbstractDict: {e2} | AbstractPos: {e3}")
+                                continue
+                else:
+                    # Fallback to abstract if raw not found
+                    res = plan.function(input_map, **plan.params)
 
                 # Handle multi-output vs single-output
                 if isinstance(res, (list, tuple, np.ndarray)):
