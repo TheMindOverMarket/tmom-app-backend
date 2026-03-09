@@ -7,7 +7,9 @@ from app.database import get_session
 from app.models import Playbook, User
 from app.schemas.playbooks import PlaybookCreate, PlaybookUpdate, StartStreamsRequest, StartStreamsResponse
 import app.lifecycle
-
+from app.routers.market_data import get_market_history
+from aggregator.models import NormalizedBar
+from datetime import datetime, timezone
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["playbooks"])
@@ -126,6 +128,35 @@ async def start_streams_creation(request: StartStreamsRequest, db: Session = Dep
                     params=metric.get("params", {})
                 )
             logger.info(f"[WORKFLOW][START_STREAMS] {len(ta_lib_metrics)} indicators registered")
+            
+            # 🚀 HYDRATION PHASE
+            try:
+                raw_symbol = context.get("symbol", "BTC")
+                alpaca_symbol = f"{raw_symbol}/USD" if "/" not in raw_symbol else raw_symbol
+                
+                market_bars = await get_market_history(symbol=alpaca_symbol, timeframe="1Min", limit=200)
+                
+                if market_bars:
+                    normalized_bars = [
+                        NormalizedBar(
+                            symbol=alpaca_symbol,  # Use exactly what the stream will use (or should it be raw_symbol?)
+                            timeframe="1m",
+                            open=b.open,
+                            high=b.high,
+                            low=b.low,
+                            close=b.close,
+                            volume=0.0,
+                            start_time=datetime.fromtimestamp(b.time, tz=timezone.utc)
+                        ) for b in market_bars
+                    ]
+                    
+                    if app.lifecycle.candle_engine:
+                        # Depending on how the stream names the symbol (it uses BTC/USD typically)
+                        app.lifecycle.candle_engine.hydrate_historical_bars(alpaca_symbol, normalized_bars)
+                        logger.info(f"[WORKFLOW][START_STREAMS] Hydrated {len(normalized_bars)} historical bars for {alpaca_symbol}")
+            except Exception as e:
+                logger.error(f"[WORKFLOW][START_STREAMS] Failed to hydrate historical bars: {e}")
+                
         except Exception as e:
             logger.error(f"[WORKFLOW][START_STREAMS] Failed to register indicators: {e}")
             raise HTTPException(status_code=400, detail=f"Invalid indicator configuration: {e}")

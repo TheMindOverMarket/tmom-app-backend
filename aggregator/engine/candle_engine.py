@@ -20,6 +20,30 @@ class CandleEngine:
             self.symbol_states[symbol] = SymbolState(symbol)
         return self.symbol_states[symbol]
 
+    def hydrate_historical_bars(self, symbol: str, bars: list[NormalizedBar]):
+        """
+        Hydrate the engine with historical bars to warm up indicators and higher timeframes.
+        """
+        state = self.get_symbol_state(symbol)
+        
+        # Sort to ensure chronological order
+        bars.sort(key=lambda b: b.start_time)
+        
+        logger.info(f"[CANDLE_ENGINE] Hydrating {symbol} with {len(bars)} historical bars...")
+        for bar in bars:
+            state.current_1m_candle = bar
+            self._finalize_1m_candle(state)
+            
+        if bars:
+            last_bar = bars[-1]
+            state.update_last_price(last_bar.close)
+            state.last_tick_timestamp_ms = int(last_bar.start_time.timestamp() * 1000)
+            
+        # Clear the current candle so the next live tick starts fresh
+        state.current_1m_candle = None
+        logger.info(f"[CANDLE_ENGINE] Hydration complete for {symbol}. Current 1m closed candles: {len(state.closed_1m_candles)}")
+
+
     def ingest_tick(self, tick: NormalizedTick):
         """
         Process a new tick. Updates current candle.
