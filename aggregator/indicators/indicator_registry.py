@@ -70,7 +70,6 @@ class IndicatorRegistry:
             "real": closes
         })
 
-        import talib
         timeframe_plans = self.plans.get(timeframe, [])
         results = {}
         for plan in timeframe_plans:
@@ -79,31 +78,15 @@ class IndicatorRegistry:
                 # Filter out missing keys to avoid KeyError just in case
                 input_arrays = [input_map[inp] for inp in plan.required_inputs if inp in input_map]
                 
+                # We need enough historical bars to actually compute the indicator. 
+                # timeperiod + 1 is generally a safe buffer to ensure TA-Lib produces a non-NaN value.
                 min_required = plan.params.get("timeperiod", 2)
-                if len(closes) < min_required:
+                if len(closes) <= min_required:
                     continue
 
-                res = None
-                
-                # Attempt 1: Raw function invocation
-                func = getattr(talib, plan.name.upper(), None)
-                if func is not None:
-                    try:
-                        res = func(*input_arrays, **plan.params)
-                    except Exception as e1:
-                        # Attempt 2: Abstract function with dictionary
-                        try:
-                            res = plan.function(input_map, **plan.params)
-                        except Exception as e2:
-                            # Attempt 3: Abstract function with positional arrays
-                            try:
-                                res = plan.function(*input_arrays, **plan.params)
-                            except Exception as e3:
-                                logger.error(f"[TALIB] All invocation methods failed for {plan.name}. Raw: {e1} | AbstractDict: {e2} | AbstractPos: {e3}")
-                                continue
-                else:
-                    # Fallback to abstract if raw not found
-                    res = plan.function(input_map, **plan.params)
+                # Execute Abstract Function directly passing strictly positional arrays
+                # This explicitly avoids TA-Lib's dictionary key-search logic which is throwing exceptions.
+                res = plan.function(*input_arrays, **plan.params)
 
                 # Handle multi-output vs single-output
                 if isinstance(res, (list, tuple, np.ndarray)):

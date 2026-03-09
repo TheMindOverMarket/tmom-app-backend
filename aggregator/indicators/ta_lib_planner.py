@@ -98,22 +98,23 @@ def build_talib_execution_plans(ta_lib_metrics: List[Dict[str, Any]]) -> List[In
         required_inputs = unique_inputs
 
         # 6. Output Fields Logic
+        # Enforce strict downstream frontend contract:
+        # - If timeperiod is present: "{name}_{timeperiod}" (e.g., "RSI_14")
+        # - If timeperiod is absent: "{name}" (e.g., "MACD")
+        timeperiod = metric.get("timeperiod") or normalized_params.get("timeperiod")
+        base_name = f"{name}_{timeperiod}" if timeperiod is not None else name
+        
         output_fields: List[str] = []
         if output_names and len(output_names) > 1:
-            # Multi-output: use abstract names
-            output_fields = list(output_names)
-        elif output_names and len(output_names) == 1:
-            # Single-output
-            if normalized_params:
-                # Deterministic suffix: sorted keys, join values with "_"
-                sorted_keys = sorted(normalized_params.keys())
-                suffix = "_".join(str(normalized_params[k]) for k in sorted_keys)
-                output_fields = [f"{name}_{suffix}"]
-            else:
-                output_fields = [name]
+            # Multi-output: use base_name for the first primary output, suffix others
+            for i, out in enumerate(output_names):
+                if i == 0:
+                    output_fields.append(base_name)
+                else:
+                    output_fields.append(f"{base_name}_{out}")
         else:
-            # No explicit output names
-            output_fields = [name]
+            # Single-output or no explicit names
+            output_fields = [base_name]
 
         # 7. Execution Plan
         plans.append(IndicatorExecutionPlan(
