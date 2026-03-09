@@ -151,7 +151,7 @@ async def start_streams_creation(request: StartStreamsRequest, db: Session = Dep
                     ]
                     
                     if app.lifecycle.candle_engine:
-                        # Depending on how the stream names the symbol (it uses BTC/USD typically)
+                        ## Depending on how the stream names the symbol (it uses BTC/USD typically)
                         app.lifecycle.candle_engine.hydrate_historical_bars(alpaca_symbol, normalized_bars)
                         logger.info(f"[WORKFLOW][START_STREAMS] Hydrated {len(normalized_bars)} historical bars for {alpaca_symbol}")
             except Exception as e:
