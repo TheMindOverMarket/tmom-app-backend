@@ -65,19 +65,29 @@ class IndicatorRegistry:
             "volume": volumes
         }
 
+        import talib
         timeframe_plans = self.plans.get(timeframe, [])
         results = {}
         for plan in timeframe_plans:
             try:
-                # TA-Lib Abstract API: pass the input map and parameters.
-                # The abstract function intelligently selects the required fields (open, high, low, close, volume)
-                # from the input map. This resolves the 'Not enough price arguments' error caused by 
-                # attempting to pass price arrays as individual keyword arguments.
-                res = plan.function(input_map, **plan.params)
+                # Use the raw talib function with positional arguments for price inputs.
+                # This bypasses the Abstract API's dictionary-mapping logic which is failing 
+                # in this environment. The order in plan.required_inputs is guaranteed 
+                # (via ta_lib_planner.py) to match the underlying C-function signature.
+                func = getattr(talib, plan.name.upper())
+                input_arrays = [input_map[inp] for inp in plan.required_inputs]
+                
+                # Check if we have enough data (at least equal to the timeperiod if specified)
+                # Most indicators need at least N + 1 bars to be stable.
+                min_required = plan.params.get("timeperiod", 2)
+                if len(closes) < min_required:
+                    continue
+
+                res = func(*input_arrays, **plan.params)
 
                 # Handle multi-output vs single-output
                 if isinstance(res, (list, tuple, np.ndarray)):
-                    # Most abstract functions return arrays. We want the latest non-nan value.
+                    # Raw functions return arrays. We want the latest non-nan value.
                     if isinstance(res, (list, tuple)):
                         # Some return multiple arrays (e.g. BBANDS)
                         for i, name in enumerate(plan.output_fields):
