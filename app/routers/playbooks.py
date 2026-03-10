@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session, select
-from typing import List, Optional
+from typing import List, Optional, Any
 import uuid
 import logging
 from app.database import get_session
@@ -10,11 +10,12 @@ import app.lifecycle
 from app.routers.market_data import get_market_history
 from aggregator.models import NormalizedBar
 from datetime import datetime, timezone
+import logging
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["playbooks"])
 
-@router.post("/playbooks/", response_model=Playbook, status_code=status.HTTP_201_CREATED)
 async def create_playbook(playbook_in: PlaybookCreate, db: Session = Depends(get_session)):
     # Validate user exists
     user = db.get(User, playbook_in.user_id)

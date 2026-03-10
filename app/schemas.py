@@ -1,13 +1,35 @@
 from pydantic import BaseModel
 from typing import Dict, Optional, Any
 
+from pydantic import model_validator
 
 class MarketStateEvent(BaseModel):
     event_type: str = "market_state"
     symbol: str
-    timestamp: str
+    current_time: str
     price: float
-    metrics: Dict[str, float]
+    high: float
+    low: float
+    metrics: Dict[str, float] = {}
+    indicator_values: Dict[str, Dict[str, float]]
+
+    @model_validator(mode="before")
+    @classmethod
+    def compute_metrics(cls, values: Any) -> Any:
+        if isinstance(values, dict):
+            # Compute metrics from indicator_values if not explicitly provided
+            if "metrics" not in values and "indicator_values" in values:
+                metrics = {}
+                for tf, tf_metrics in values["indicator_values"].items():
+                    for k, v in tf_metrics.items():
+                        key = k if tf == "1m" else f"{k}_{tf}"
+                        try:
+                            # Rely on Pydantic's float casting downstream, but handle dict safely
+                            metrics[key] = float(v)
+                        except (ValueError, TypeError):
+                            pass
+                values["metrics"] = metrics
+        return values
 
 
 class UserActivityEvent(BaseModel):

@@ -174,18 +174,17 @@ class AlpacaCryptoStream(AlpacaBaseStream):
                     raw_ts = snapshot["last_tick_timestamp_ms"]
                     current_time_str = datetime.fromtimestamp(raw_ts / 1000, timezone.utc).isoformat().replace("+00:00", "Z")
                     
-                    broadcast_event = {
-                        "event_type": "market_state",
-                        "symbol": symbol,
-                        "current_time": current_time_str,
-                        "price": snapshot["last_price"],
-                        "high": snapshot["current_candle_high"],
-                        "low": snapshot["current_candle_low"],
-                        "metrics": snapshot["indicator_values"].get("1m", {}), # Default to 1m metrics
-                        "indicator_values": snapshot["indicator_values"] # Full details
-                    }
+                    from app.schemas import MarketStateEvent
+                    event = MarketStateEvent(
+                        symbol=symbol,
+                        current_time=current_time_str,
+                        price=snapshot["last_price"],
+                        high=snapshot["current_candle_high"],
+                        low=snapshot["current_candle_low"],
+                        indicator_values=snapshot["indicator_values"] # Metrics derived automatically
+                    )
                     
-                    await market_broadcaster.broadcast(json.dumps(broadcast_event))
+                    await market_broadcaster.broadcast(event.model_dump_json())
             except asyncio.CancelledError:
                 break
             except Exception as e:
