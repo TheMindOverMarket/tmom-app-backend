@@ -12,7 +12,8 @@ from app.routers import (
     rules, 
     conditions, 
     condition_edges,
-    market_data
+    market_data,
+    utility
 )
 
 
@@ -70,6 +71,7 @@ app.include_router(rules.router)
 app.include_router(conditions.router)
 app.include_router(condition_edges.router)
 app.include_router(market_data.router)
+app.include_router(utility.router)
 
 @app.get("/")
 def root():
