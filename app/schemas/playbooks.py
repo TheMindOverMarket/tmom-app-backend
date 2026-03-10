@@ -5,7 +5,8 @@ from app.models import Playbook
 
 
 HARDCODED_PROMPT = """
-I’m using BTC. 
+I’m using BTC.
+
 1. Setup Logic (Deterministic Inputs)
 
 Derived State:
