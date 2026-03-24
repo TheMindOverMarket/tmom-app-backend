@@ -5,7 +5,7 @@ import uuid
 import logging
 from app.database import get_session
 from app.models import User
-from app.schemas.users import UserCreate, UserUpdate
+from app.schemas import UserCreate, UserUpdate
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["users"])

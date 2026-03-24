@@ -5,7 +5,7 @@ import uuid
 import logging
 from app.database import get_session
 from app.models import ConditionEdge, Rule, Condition
-from app.schemas.condition_edges import ConditionEdgeCreate, ConditionEdgeUpdate
+from app.schemas import ConditionEdgeCreate, ConditionEdgeUpdate
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["condition-edges"])

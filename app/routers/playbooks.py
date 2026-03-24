@@ -5,7 +5,7 @@ import uuid
 import logging
 from app.database import get_session
 from app.models import Playbook, User
-from app.schemas.playbooks import PlaybookCreate, PlaybookUpdate, StartStreamsRequest, StartStreamsResponse
+from app.schemas import PlaybookCreate, PlaybookUpdate, StartStreamsRequest, StartStreamsResponse
 import app.lifecycle
 from app.routers.market_data import get_market_history
 from aggregator.models import NormalizedBar

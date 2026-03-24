@@ -4,7 +4,7 @@ import uuid
 import logging
 import httpx
 from app.database import get_session
-from app.schemas.playbooks import PlaybookCreate
+from app.schemas import PlaybookCreate
 from app.routers.playbooks import create_playbook
 from app.config import settings
 from typing import Optional

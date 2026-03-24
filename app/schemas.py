@@ -1,7 +1,10 @@
-from pydantic import BaseModel
-from typing import Dict, Optional, Any
+import uuid
+from datetime import datetime
+from typing import Optional, Dict, List, Any
+from pydantic import BaseModel, model_validator
+from app.models import SessionStatus, SessionEventType, Playbook, User
 
-from pydantic import model_validator
+# --- Core Event Schemas (Upstream Alpaca/Aggregator) ---
 
 class MarketStateEvent(BaseModel):
     event_type: str = "market_state"
@@ -17,14 +20,12 @@ class MarketStateEvent(BaseModel):
     @classmethod
     def compute_metrics(cls, values: Any) -> Any:
         if isinstance(values, dict):
-            # Compute metrics from indicator_values if not explicitly provided
             if "metrics" not in values and "indicator_values" in values:
                 metrics = {}
                 for tf, tf_metrics in values["indicator_values"].items():
                     for k, v in tf_metrics.items():
                         key = k if tf == "1m" else f"{k}_{tf}"
                         try:
-                            # Rely on Pydantic's float casting downstream, but handle dict safely
                             metrics[key] = float(v)
                         except (ValueError, TypeError):
                             pass
@@ -43,21 +44,209 @@ class UserActivityEvent(BaseModel):
     price: Optional[float]
     timestamp_alpaca: float
     timestamp_server: float
-    
-    # --- Enrichment Fields (Market Context) ---
-    
-    # capturing: The reliability status of the market data join.
-    # why: Tells the consumer if they can trust the price context. "ATTACHED" = reliable.
     market_attachment_state: Optional[str] = None
-    
-    # capturing: The unique ID (or timestamp-key) of the exact MarketStateEvent that was attached.
-    # why: Allows the consumer to join this event back to the specific market quote in the db/logs.
     market_snapshot_id: Optional[str] = None
-    
-    # capturing: The milliseconds elapsed between the MarketState creation and this UserActivity.
-    # why: Measures "data freshness". Lower is better. If this is high (>5000ms), state becomes "ATTACHED_STALE".
     market_ref_age_ms: Optional[float] = None
 
+# --- User Schemas ---
+
+class UserCreate(BaseModel):
+    email: str
+
+class UserUpdate(BaseModel):
+    email: Optional[str] = None
+
+# --- Playbook Schemas ---
+
+HARDCODED_PROMPT = """
+I'm using BTC.
+
+1. Setup Logic (Deterministic Inputs)
+
+Derived State:
+    - Session VWAP (UTC daily reset)
+    - 20-period EMA
+    - 14-period ATR
+    - Rolling volatility regime
+    - Daily realized PnL
+
+---
+
+Long Setup
+
+Conditions must ALL be true:
+    1. Price < VWAP - 1.5 * ATR
+    2. EMA slope > 0
+    3. 5-min close back above prior candle high
+    4. Not within 10 minutes of previous stop
+
+---
+
+Short Setup
+    1. Price > VWAP + 1.5 * ATR
+    2. EMA slope < 0
+    3. 5-min close below prior candle low
+    4. Not within 10 minutes of previous stop
+
+---
+
+2. Entry Rules
+    - Market order at next candle open.
+    - Max 1 position at a time.
+    - No pyramiding.
+    - No flipping within 5 minutes.
+
+---
+
+3. Risk Model
+
+Stop: 1 ATR
+Target: 2 ATR
+Trailing stop activates at +1R
+Max daily loss: 3R
+Max 5 trades per UTC day
+Position size: 1% account risk per trade
+
+---
+
+4. Meta Discipline Rules (Where TMOM Shines)
+
+Hard Constraints:
+    - Block trade if daily loss >= 3R
+    - Block if > 5 trades
+    - Block if position size > 1% risk
+
+Soft Guardrails:
+    - Warn if trade taken within 3 minutes of prior close
+    - Warn if volatility > 95th percentile
+    - Require justification if third consecutive loss
+
+Cooldown:
+    - 10 minutes after stop loss
+    - 30 minutes after 2 consecutive losses
+"""
+
+class PlaybookCreate(BaseModel):
+    name: str
+    user_id: uuid.UUID = uuid.UUID("1d4d88c7-bcd1-4813-8f34-59c9776e5b3f")
+    original_nl_input: str
+    context: Optional[Dict[str, Any]] = None
+    is_active: bool = True
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "name": "Sample BTC Ruleset",
+                "user_id": "1d4d88c7-bcd1-4813-8f34-59c9776e5b3f",
+                "original_nl_input": HARDCODED_PROMPT,
+                "context": {
+                    "description": "Auto-generated sample playbook from utility endpoint",
+                    "symbol": "BTC/USD"
+                },
+                "is_active": True
+            }
+        }
+    }
+
+    @model_validator(mode="before")
+    @classmethod
+    def cast_context_floats(cls, values: Any) -> Any:
+        def parse_floats(data: Any) -> Any:
+            if isinstance(data, dict):
+                return {k: parse_floats(v) for k, v in data.items()}
+            elif isinstance(data, list):
+                return [parse_floats(v) for v in data]
+            elif isinstance(data, str):
+                try:
+                    return float(data)
+                except ValueError:
+                    return data
+            return data
+        if isinstance(values, dict) and values.get("context"):
+            values["context"] = parse_floats(values["context"])
+        return values
+
+class PlaybookUpdate(BaseModel):
+    name: Optional[str] = None
+    original_nl_input: Optional[str] = None
+    context: Optional[Dict[str, Any]] = None
+    is_active: Optional[bool] = None
+
+class StartStreamsRequest(BaseModel):
+    user_id: uuid.UUID = uuid.UUID("1d4d88c7-bcd1-4813-8f34-59c9776e5b3f")
+    playbook_id: uuid.UUID
+
+class StartStreamsResponse(BaseModel):
+    status: str
+    message: str
+    playbook: Playbook # Note: SQLModel import
+
+# --- Rule & Condition Schemas ---
+
+class RuleCreate(BaseModel):
+    name: str
+    playbook_id: uuid.UUID
+    is_active: bool = True
+
+class RuleUpdate(BaseModel):
+    name: Optional[str] = None
+    is_active: Optional[bool] = None
+
+class RuleIngestRequest(BaseModel):
+    rule_nl: str
+    user_id: Optional[str] = "default_user"
+    playbook_id: Optional[str] = "default_playbook"
+
+class RuleIngestResponse(BaseModel):
+    ruleId: str
+    status: str
+
+class ConditionCreate(BaseModel):
+    rule_id: uuid.UUID
+    metric: str
+    comparator: str
+    value: str
+    is_active: bool = True
+
+class ConditionUpdate(BaseModel):
+    metric: Optional[str] = None
+    comparator: Optional[str] = None
+    value: Optional[str] = None
+    is_active: Optional[bool] = None
+
+class ConditionEdgeCreate(BaseModel):
+    rule_id: uuid.UUID
+    parent_condition_id: uuid.UUID
+    child_condition_id: uuid.UUID
+    logical_operator: str
+
+# --- Market Data & State Schemas ---
+
+class MarketBar(BaseModel):
+    time: int
+    open: float
+    high: float
+    low: float
+    close: float
+
+class MarketHistoryResponse(BaseModel):
+    symbol: str
+    timeframe: str
+    data: List[MarketBar]
+
+class MarketStateSnapshot(BaseModel):
+    symbol: str
+    last_price: float
+    last_tick_timestamp_ms: Optional[int] = None
+    current_candle_high: float
+    current_candle_low: float
+    prior_candle_high: Optional[float] = None
+    prior_candle_low: Optional[float] = None
+    session_high: float
+    session_low: float
+    indicator_values: Dict[str, Dict[str, float]]
+
+# --- Trade Schemas ---
 
 class TradeTriggerRequest(BaseModel):
     symbol: str = "BTC/USD"
@@ -66,21 +255,51 @@ class TradeTriggerRequest(BaseModel):
     type: str = "market"
     time_in_force: str = "gtc"
 
-
 class TradeTriggerResponse(BaseModel):
     status: str
     order_id: Optional[str] = None
     error: Optional[str] = None
 
+# --- Session Analytics Schemas ---
 
-class RuleIngestRequest(BaseModel):
-    rule_nl: str
-    user_id: Optional[str] = "default_user"
-    playbook_id: Optional[str] = "default_playbook"
+class SessionCreate(BaseModel):
+    user_id: uuid.UUID
+    playbook_id: uuid.UUID
+    session_metadata: Optional[Dict[str, Any]] = None
 
+class SessionUpdate(BaseModel):
+    status: Optional[SessionStatus] = None
+    session_metadata: Optional[Dict[str, Any]] = None
 
-class RuleIngestResponse(BaseModel):
-    ruleId: str
-    status: str
+class SessionRead(BaseModel):
+    id: uuid.UUID
+    user_id: uuid.UUID
+    playbook_id: uuid.UUID
+    start_time: datetime
+    end_time: Optional[datetime] = None
+    status: SessionStatus
+    session_metadata: Optional[Dict[str, Any]] = None
+    created_at: datetime
 
+    class Config:
+        from_attributes = True
 
+class SessionEventCreate(BaseModel):
+    session_id: uuid.UUID
+    type: SessionEventType
+    tick: Optional[int] = None
+    event_data: Dict[str, Any]
+    event_metadata: Optional[Dict[str, Any]] = None
+
+class SessionEventRead(BaseModel):
+    id: uuid.UUID
+    session_id: uuid.UUID
+    type: SessionEventType
+    timestamp: datetime
+    tick: Optional[int] = None
+    event_data: Dict[str, Any]
+    event_metadata: Optional[Dict[str, Any]] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True

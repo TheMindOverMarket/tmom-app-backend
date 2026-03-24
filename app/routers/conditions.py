@@ -5,7 +5,7 @@ import uuid
 import logging
 from app.database import get_session
 from app.models import Condition, Rule
-from app.schemas.conditions import ConditionCreate, ConditionUpdate
+from app.schemas import ConditionCreate, ConditionUpdate
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["conditions"])

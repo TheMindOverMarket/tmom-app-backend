@@ -5,7 +5,7 @@ import uuid
 import logging
 from app.database import get_session
 from app.models import Rule, Playbook
-from app.schemas.rules import RuleCreate, RuleUpdate
+from app.schemas import RuleCreate, RuleUpdate
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["rules"])

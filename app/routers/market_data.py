@@ -4,7 +4,7 @@ import os
 import logging
 from datetime import datetime
 from typing import List, Dict, Any
-from app.schemas.market_data import MarketBar, MarketHistoryResponse
+from app.schemas import MarketBar, MarketHistoryResponse
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["market-data"])
