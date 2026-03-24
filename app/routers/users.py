@@ -12,6 +12,15 @@ router = APIRouter(tags=["users"])
 
 @router.post("/users/", response_model=User, status_code=status.HTTP_201_CREATED)
 async def create_user(user_in: UserCreate, db: Session = Depends(get_session)):
+    if user_in.id:
+        existing_by_id = db.get(User, user_in.id)
+        if existing_by_id:
+            logger.warning(f"[USER] Create failed: ID {user_in.id} already registered")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="A user with this ID already exists."
+            )
+
     # Check if user already exists
     existing = db.exec(select(User).where(User.email == user_in.email)).first()
     if existing:
@@ -21,7 +30,7 @@ async def create_user(user_in: UserCreate, db: Session = Depends(get_session)):
             detail="A user with this email address already exists. Please use a unique email."
         )
     
-    user = User(**user_in.dict())
+    user = User(**user_in.dict(exclude_none=True))
     db.add(user)
     db.commit()
     db.refresh(user)
@@ -77,4 +86,3 @@ async def delete_user(id: uuid.UUID, db: Session = Depends(get_session)):
     db.commit()
     logger.info(f"[USER] User deleted: {id}")
     return None
-

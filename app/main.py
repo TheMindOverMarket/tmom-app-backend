@@ -1,6 +1,7 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, Depends, status
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.exc import OperationalError
 import logging
 from app.config import settings
 from contextlib import asynccontextmanager
@@ -61,6 +62,17 @@ async def global_exception_handler(request: Request, exc: Exception):
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content={
             "detail": "An internal server error occurred. Our team has been notified.",
+            "type": exc.__class__.__name__
+        }
+    )
+
+@app.exception_handler(OperationalError)
+async def database_exception_handler(request: Request, exc: OperationalError):
+    logger.error(f"Database operation failed: {exc}")
+    return JSONResponse(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        content={
+            "detail": "Database connection failed. Check DATABASE_URL and ensure the configured local Postgres role and database exist.",
             "type": exc.__class__.__name__
         }
     )
