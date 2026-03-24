@@ -175,6 +175,7 @@ async def start_streams_creation(request: StartStreamsRequest, db: Session = Dep
         message="Stream creation workflow initiated successfully",
         playbook=playbook
     )
+
     # Log to session if active
     session_id = get_active_session(playbook.id)
     if session_id:
