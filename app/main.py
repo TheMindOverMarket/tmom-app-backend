@@ -15,6 +15,8 @@ from app.routers import (
     market_data,
     utility
 )
+from app.schemas import TradeTriggerRequest, TradeTriggerResponse
+from app.trading import place_alpaca_order
 
 
 
@@ -80,6 +82,14 @@ def root():
         "service": "tmom-domain-api",
         "note": "Domain CRUD operational"
     }
+
+@app.post("/trade", response_model=TradeTriggerResponse)
+def execute_trade(trade_req: TradeTriggerRequest):
+    """
+    Executes a buy or sell on Alpaca. The trade update 
+    will flow through the user-activity stream via background websockets.
+    """
+    return place_alpaca_order(trade_req)
 
 @app.get("/health")
 async def health(db = Depends(get_session)) -> dict:
