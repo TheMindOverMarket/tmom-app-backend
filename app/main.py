@@ -14,7 +14,8 @@ from app.routers import (
     conditions, 
     condition_edges,
     market_data,
-    utility
+    utility,
+    sessions
 )
 from app.schemas import TradeTriggerRequest, TradeTriggerResponse
 from app.trading import place_alpaca_order
@@ -76,6 +77,7 @@ app.include_router(conditions.router)
 app.include_router(condition_edges.router)
 app.include_router(market_data.router)
 app.include_router(utility.router)
+app.include_router(sessions.router)
 
 @app.get("/")
 def root():

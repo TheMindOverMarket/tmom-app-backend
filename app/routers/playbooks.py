@@ -11,11 +11,14 @@ from app.routers.market_data import get_market_history
 from aggregator.models import NormalizedBar
 from datetime import datetime, timezone
 import logging
+from app.sessions import log_session_event, get_active_session
+from app.models import SessionEventType
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["playbooks"])
 
+@router.post("/playbooks/", response_model=Playbook, status_code=status.HTTP_201_CREATED)
 async def create_playbook(playbook_in: PlaybookCreate, db: Session = Depends(get_session)):
     # Validate user exists
     user = db.get(User, playbook_in.user_id)
@@ -167,9 +170,21 @@ async def start_streams_creation(request: StartStreamsRequest, db: Session = Dep
     # Placeholder: Future asynchronous stream creation logic goes here
     
     # Returning a canonical success response
-    return StartStreamsResponse(
+    res = StartStreamsResponse(
         status="accepted",
         message="Stream creation workflow initiated successfully",
         playbook=playbook
     )
+
+    # Log to session if active
+    session_id = get_active_session(playbook.id)
+    if session_id:
+        log_session_event(
+            playbook_id=playbook.id,
+            event_type=SessionEventType.SYSTEM,
+            event_data={"action": "START_STREAMS", "status": "accepted"},
+            event_metadata={"session_id": str(session_id)}
+        )
+    
+    return res
 
