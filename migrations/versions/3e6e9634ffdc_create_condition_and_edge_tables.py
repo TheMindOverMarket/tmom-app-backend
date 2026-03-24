@@ -28,8 +28,8 @@ def upgrade() -> None:
     sa.Column('metric', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
     sa.Column('comparator', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
     sa.Column('value', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
     sa.ForeignKeyConstraint(['rule_id'], ['rules.id'], ),
     sa.PrimaryKeyConstraint('id')
     )
@@ -41,7 +41,7 @@ def upgrade() -> None:
     sa.Column('parent_condition_id', sa.Uuid(), nullable=False),
     sa.Column('child_condition_id', sa.Uuid(), nullable=False),
     sa.Column('logical_operator', sa.Enum('AND', 'OR', name='logical_operator_enum'), nullable=False),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
     sa.ForeignKeyConstraint(['child_condition_id'], ['conditions.id'], ),
     sa.ForeignKeyConstraint(['parent_condition_id'], ['conditions.id'], ),
     sa.ForeignKeyConstraint(['rule_id'], ['rules.id'], ),

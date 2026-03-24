@@ -20,14 +20,17 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # 1. Add the column as nullable first to safely handle existing data
-    op.add_column('playbooks', sa.Column('original_nl_input', sa.Text(), nullable=True))
+    # Use batch_alter_table for SQLite compatibility
+    with op.batch_alter_table('playbooks') as batch_op:
+        # 1. Add the column as nullable first to safely handle existing data
+        batch_op.add_column(sa.Column('original_nl_input', sa.Text(), nullable=True))
     
     # 2. Backfill existing entries with a safe default (empty string)
     op.execute("UPDATE playbooks SET original_nl_input = '' WHERE original_nl_input IS NULL")
     
     # 3. Alter the column to satisfy the required constraint
-    op.alter_column('playbooks', 'original_nl_input', nullable=False)
+    with op.batch_alter_table('playbooks') as batch_op:
+        batch_op.alter_column('original_nl_input', nullable=False)
 
 
 def downgrade() -> None:
