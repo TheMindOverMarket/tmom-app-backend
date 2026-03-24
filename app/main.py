@@ -3,6 +3,7 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 import logging
 from app.config import settings
+from contextlib import asynccontextmanager
 from app.database import get_session
 from app.lifecycle import on_startup, on_shutdown
 from app.broadcast import MarketStateBroadcaster
@@ -27,9 +28,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title=settings.app_name)
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await on_startup()
+    yield
+    await on_shutdown()
 
-
+app = FastAPI(title=settings.app_name, lifespan=lifespan)
 
 # Strict Canonical CORS Middleware Configuration
 app.add_middleware(
@@ -62,9 +67,6 @@ async def global_exception_handler(request: Request, exc: Exception):
 # Broadcasters for streaming
 market_broadcaster = MarketStateBroadcaster(name="MARKET_STATE")
 activity_broadcaster = MarketStateBroadcaster(name="USER_ACTIVITY")
-
-app.add_event_handler("startup", on_startup)
-app.add_event_handler("shutdown", on_shutdown)
 
 # Include Domain Routers
 app.include_router(users.router)
