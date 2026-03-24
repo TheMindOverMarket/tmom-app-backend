@@ -6,6 +6,8 @@ import websockets
 from datetime import datetime, timezone
 from aggregator.models import NormalizedTick
 import app.lifecycle
+from app.sessions import log_session_event
+from app.models import SessionEventType
 
 logger = logging.getLogger(__name__)
 
@@ -320,6 +322,16 @@ class AlpacaTradingStream(AlpacaBaseStream):
                                 from app.main import activity_broadcaster
                                 await activity_broadcaster.broadcast(normalized_event.model_dump_json())
                                 print(f"[USER_ACTIVITY][EMITTED] {normalized_event.model_dump_json()}")
+
+                                # 🚀 ANALYTICS LOGGING: Save to Session History
+                                from app.sessions import _active_sessions
+                                for playbook_id in _active_sessions.keys():
+                                    log_session_event(
+                                        playbook_id=playbook_id,
+                                        event_type=SessionEventType.TRADING,
+                                        event_data=normalized_event.model_dump(),
+                                        event_metadata={"alpaca_event": event_type}
+                                    )
 
                         except json.JSONDecodeError:
                             pass
