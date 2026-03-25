@@ -28,7 +28,14 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title=settings.app_name)
+from contextlib import asynccontextmanager
+@asynccontextmanager
+async def app_lifespan(app: FastAPI):
+    await on_startup()
+    yield
+    await on_shutdown()
+
+app = FastAPI(title=settings.app_name, lifespan=app_lifespan)
 
 
 
@@ -63,9 +70,6 @@ async def global_exception_handler(request: Request, exc: Exception):
 # Broadcasters for streaming
 market_broadcaster = MarketStateBroadcaster(name="MARKET_STATE")
 activity_broadcaster = MarketStateBroadcaster(name="USER_ACTIVITY")
-
-app.add_event_handler("startup", on_startup)
-app.add_event_handler("shutdown", on_shutdown)
 
 # Include Domain Routers
 app.include_router(users.router)
