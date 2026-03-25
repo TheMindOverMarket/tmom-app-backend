@@ -85,13 +85,56 @@ def root():
         "note": "Domain CRUD operational"
     }
 
-@app.post("/trade", response_model=TradeTriggerResponse)
+@app.post("/trade", response_model=TradeTriggerResponse, tags=["Trading"])
 def execute_trade(trade_req: TradeTriggerRequest):
     """
     Executes a buy or sell on Alpaca. The trade update 
     will flow through the user-activity stream via background websockets.
     """
     return place_alpaca_order(trade_req)
+
+@app.post("/mock-trade", response_model=TradeTriggerResponse, tags=["Trading"])
+async def execute_mock_trade(trade_req: TradeTriggerRequest):
+    """
+    Executes a mock trade and directly pushes it to the user-activity stream.
+    Used for frontend testing without relying on Alpaca WebSocket.
+    """
+    import uuid
+    import time
+    from app.schemas import UserActivityEvent
+    from app.sessions import log_session_event, _active_sessions
+    from app.models import SessionEventType
+
+    order_id = str(uuid.uuid4())
+    
+    normalized_event = UserActivityEvent(
+        activity_id=str(uuid.uuid4()),
+        alpaca_event_type="fill",
+        order_id=order_id,
+        symbol=trade_req.symbol,
+        side=trade_req.side,
+        qty=float(trade_req.qty),
+        filled_qty=float(trade_req.qty),
+        price=100000.0,
+        timestamp_alpaca=time.time() * 1000,
+        timestamp_server=time.time() * 1000,
+        market_attachment_state="MOCK",
+        market_snapshot_id=None,
+        market_ref_age_ms=None
+    )
+    
+    await activity_broadcaster.broadcast(normalized_event.model_dump_json())
+    logger.info(f"[MOCK_TRADE] Emitted mock user activity for {trade_req.symbol}")
+    
+    for playbook_id in _active_sessions.keys():
+        log_session_event(
+            playbook_id=playbook_id,
+            event_type=SessionEventType.TRADING,
+            event_data=normalized_event.model_dump(),
+            event_metadata={"alpaca_event": "mock_fill"}
+        )
+        
+    return TradeTriggerResponse(status="success", order_id=order_id)
 
 @app.get("/health")
 async def health(db = Depends(get_session)) -> dict:
