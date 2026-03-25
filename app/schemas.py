@@ -220,6 +220,9 @@ class ConditionEdgeCreate(BaseModel):
     child_condition_id: uuid.UUID
     logical_operator: str
 
+class ConditionEdgeUpdate(BaseModel):
+    logical_operator: Optional[str] = None
+
 # --- Market Data & State Schemas ---
 
 class MarketBar(BaseModel):
