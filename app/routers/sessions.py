@@ -52,7 +52,6 @@ async def start_session(session_data: SessionCreate, db: Session = Depends(get_s
                 if old_playbook and old_playbook.context:
                     symbol = old_playbook.context.get("symbol")
                     if symbol:
-                        import app.lifecycle
                         if app.lifecycle.candle_engine:
                             app.lifecycle.candle_engine.clear_symbol_state(symbol)
             db.flush() # Ensure old sessions are updated before starting a new one
