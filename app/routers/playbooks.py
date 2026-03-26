@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlmodel import Session, select
 from sqlalchemy import update as sa_update
 from typing import List, Optional, Any
@@ -6,9 +6,9 @@ import uuid
 import logging
 from app.database import get_session
 from app.models import Playbook, User
-from app.schemas import PlaybookCreate, PlaybookUpdate, StartStreamsRequest, StartStreamsResponse
-from app.sessions import log_session_event, get_active_session
-from app.models import SessionEventType
+from app.models import SessionEventType, GenerationStatus
+from app.schemas import PlaybookCreate, PlaybookUpdate, StartStreamsRequest, StartStreamsResponse, PlaybookIngest
+from app.rule_engine.intelligence import analyze_playbook_execution
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +42,54 @@ async def create_playbook(playbook_in: PlaybookCreate, db: Session = Depends(get
     db.commit()
     db.refresh(playbook)
     logger.info(f"[PLAYBOOK] New playbook created: {playbook.name} (ID: {playbook.id}) for User: {playbook.user_id}")
+    return playbook
+
+@router.post("/playbooks/ingest", response_model=Playbook, status_code=status.HTTP_201_CREATED)
+async def ingest_playbook(
+    playbook_in: PlaybookIngest, 
+    background_tasks: BackgroundTasks, 
+    db: Session = Depends(get_session)
+):
+    """
+    INGESTION LIFECYCLE:
+    1. Create a Playbook record with generation_status="PENDING".
+    2. Atomic Invariant: Maintain only one active playbook per user.
+    3. Lifecycle Trigger: Start LLM extraction in the background.
+    4. Response: Return the PENDING record immediately.
+    """
+    # 1. Validate User
+    user = db.get(User, playbook_in.user_id)
+    if not user:
+        logger.warning(f"[PLAYBOOK][INGEST] User {playbook_in.user_id} not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, 
+            detail=f"Cannot ingest. User {playbook_in.user_id} not found."
+        )
+
+    # 2. SYSTEM INVARIANT: Only one active playbook per user.
+    # New ingestions are ACTIVE by default, so deactivate all others.
+    logger.info(f"[PLAYBOOK][INGEST] Creating new PENDING playbook for User: {playbook_in.user_id}")
+    db.exec(
+        sa_update(Playbook)
+        .where(Playbook.user_id == playbook_in.user_id)
+        .values(is_active=False)
+    )
+    db.flush()
+
+    # 3. Create the record (PENDING)
+    playbook = Playbook(
+        **playbook_in.dict(), 
+        is_active=True,
+        generation_status=GenerationStatus.PENDING
+    )
+    db.add(playbook)
+    db.commit()
+    db.refresh(playbook)
+    
+    # 4. Trigger Background Extraction (LLM Analyzer)
+    background_tasks.add_task(analyze_playbook_execution, playbook.id)
+    
+    logger.info(f"[PLAYBOOK][INGESTED] ID: {playbook.id} - Extraction Triggered")
     return playbook
 
 @router.get("/playbooks/", response_model=List[Playbook])

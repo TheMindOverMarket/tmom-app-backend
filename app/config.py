@@ -11,6 +11,9 @@ class Settings(BaseSettings):
     # Database
     database_url: str = ""
 
+    # External Services
+    rule_engine_base_url: str = "https://rule-engine-rcg9.onrender.com"
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 

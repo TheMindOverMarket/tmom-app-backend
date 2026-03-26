@@ -176,6 +176,11 @@ class PlaybookUpdate(BaseModel):
     is_active: Optional[bool] = None
     generation_status: Optional[GenerationStatus] = None
 
+class PlaybookIngest(BaseModel):
+    name: str
+    user_id: uuid.UUID = uuid.UUID("1d4d88c7-bcd1-4813-8f34-59c9776e5b3f")
+    original_nl_input: str
+
 class StartStreamsRequest(BaseModel):
     user_id: uuid.UUID = uuid.UUID("1d4d88c7-bcd1-4813-8f34-59c9776e5b3f")
     playbook_id: uuid.UUID
