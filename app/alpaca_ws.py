@@ -3,11 +3,14 @@ import json
 import logging
 import os
 import websockets
+import uuid
+import time
 from datetime import datetime, timezone
 from aggregator.models import NormalizedTick
 import app.lifecycle
 from app.sessions import log_session_event
 from app.models import SessionEventType
+from app.schemas import UserActivityEvent
 
 logger = logging.getLogger(__name__)
 
@@ -179,6 +182,7 @@ class AlpacaCryptoStream(AlpacaBaseStream):
                     from app.schemas import MarketStateEvent
                     event = MarketStateEvent(
                         symbol=symbol,
+                        timestamp=current_time_str,
                         current_time=current_time_str,
                         price=snapshot["last_price"],
                         high=snapshot["current_candle_high"],
@@ -261,11 +265,9 @@ class AlpacaTradingStream(AlpacaBaseStream):
                                         else:
                                             ts_alpaca = raw_ts
 
-                                # Create Normalized Event
-                                from app.schemas import UserActivityEvent
-                                import uuid
-                                import time
-
+                                # Create Normalized Event with ISO Timestamp
+                                timestamp_iso = datetime.fromtimestamp(time.time(), tz=timezone.utc).isoformat().replace("+00:00", "Z")
+                                
                                 normalized_event = UserActivityEvent(
                                     activity_id=str(uuid.uuid4()),
                                     alpaca_event_type=event_type or "unknown",
@@ -275,6 +277,7 @@ class AlpacaTradingStream(AlpacaBaseStream):
                                     qty=qty,
                                     filled_qty=filled_qty,
                                     price=price,
+                                    timestamp=timestamp_iso,
                                     timestamp_alpaca=ts_alpaca,
                                     timestamp_server=time.time() * 1000
                                 )

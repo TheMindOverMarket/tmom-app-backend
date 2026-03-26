@@ -9,7 +9,8 @@ from app.models import SessionStatus, SessionEventType, Playbook, User
 class MarketStateEvent(BaseModel):
     event_type: str = "market_state"
     symbol: str
-    current_time: str
+    timestamp: str # ISO-8601 UTC
+    current_time: str # Legacy support
     price: float
     high: float
     low: float
@@ -42,6 +43,7 @@ class UserActivityEvent(BaseModel):
     qty: float
     filled_qty: float
     price: Optional[float]
+    timestamp: str # ISO-8601 UTC standard for chart sync
     timestamp_alpaca: float
     timestamp_server: float
     market_attachment_state: Optional[str] = None

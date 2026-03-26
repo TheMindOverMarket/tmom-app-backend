@@ -161,29 +161,44 @@ async def health(db = Depends(get_session)) -> dict:
 @app.websocket("/ws/market-state")
 async def market_state_ws(websocket: WebSocket):
     user_id = websocket.query_params.get("user_id")
-    await market_broadcaster.connect(websocket, user_id=user_id)
+    session_id = websocket.query_params.get("session_id")
+    await market_broadcaster.connect(websocket, user_id=user_id, session_id=session_id)
     try:
         while True:
             await websocket.receive_text()
     except WebSocketDisconnect:
-        await market_broadcaster.disconnect(websocket, user_id=user_id)
+        await market_broadcaster.disconnect(websocket, user_id=user_id, session_id=session_id)
+
+@app.websocket("/ws/engine-output")
+async def engine_output_ws(websocket: WebSocket):
+    """Alias for market-state, strictly for frontend alignment."""
+    user_id = websocket.query_params.get("user_id")
+    session_id = websocket.query_params.get("session_id")
+    await market_broadcaster.connect(websocket, user_id=user_id, session_id=session_id)
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        await market_broadcaster.disconnect(websocket, user_id=user_id, session_id=session_id)
 
 @app.websocket("/ws/market-data")
 async def market_data_ws(websocket: WebSocket):
     user_id = websocket.query_params.get("user_id")
-    await market_broadcaster.connect(websocket, user_id=user_id)
+    session_id = websocket.query_params.get("session_id")
+    await market_broadcaster.connect(websocket, user_id=user_id, session_id=session_id)
     try:
         while True:
             await websocket.receive_text()
     except WebSocketDisconnect:
-        await market_broadcaster.disconnect(websocket, user_id=user_id)
+        await market_broadcaster.disconnect(websocket, user_id=user_id, session_id=session_id)
 
 @app.websocket("/ws/user-activity")
 async def user_activity_ws(websocket: WebSocket):
     user_id = websocket.query_params.get("user_id")
-    await activity_broadcaster.connect(websocket, user_id=user_id)
+    session_id = websocket.query_params.get("session_id")
+    await activity_broadcaster.connect(websocket, user_id=user_id, session_id=session_id)
     try:
         while True:
             await websocket.receive_text()
     except WebSocketDisconnect:
-        await activity_broadcaster.disconnect(websocket, user_id=user_id)
+        await activity_broadcaster.disconnect(websocket, user_id=user_id, session_id=session_id)
