@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import Optional, Dict, List, Any
 from pydantic import BaseModel, model_validator
-from app.models import SessionStatus, SessionEventType, Playbook, User
+from app.models import SessionStatus, SessionEventType, Playbook, User, GenerationStatus
 
 # --- Core Event Schemas (Upstream Alpaca/Aggregator) ---
 
@@ -134,6 +134,7 @@ class PlaybookCreate(BaseModel):
     original_nl_input: str
     context: Optional[Dict[str, Any]] = None
     is_active: bool = True
+    generation_status: GenerationStatus = GenerationStatus.COMPLETED
 
     model_config = {
         "json_schema_extra": {
@@ -173,6 +174,7 @@ class PlaybookUpdate(BaseModel):
     original_nl_input: Optional[str] = None
     context: Optional[Dict[str, Any]] = None
     is_active: Optional[bool] = None
+    generation_status: Optional[GenerationStatus] = None
 
 class StartStreamsRequest(BaseModel):
     user_id: uuid.UUID = uuid.UUID("1d4d88c7-bcd1-4813-8f34-59c9776e5b3f")
@@ -187,11 +189,15 @@ class StartStreamsResponse(BaseModel):
 
 class RuleCreate(BaseModel):
     name: str
+    description: Optional[str] = None
+    category: Optional[str] = "logic"
     playbook_id: uuid.UUID
     is_active: bool = True
 
 class RuleUpdate(BaseModel):
     name: Optional[str] = None
+    description: Optional[str] = None
+    category: Optional[str] = None
     is_active: Optional[bool] = None
 
 class RuleIngestRequest(BaseModel):

@@ -14,6 +14,11 @@ class SessionStatus(str, Enum):
     COMPLETED = "COMPLETED"
     FAILED = "FAILED"
 
+class GenerationStatus(str, Enum):
+    PENDING = "PENDING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+
 class SessionEventType(str, Enum):
     ADHERENCE = "ADHERENCE"
     DEVIATION = "DEVIATION"
@@ -75,6 +80,13 @@ class Playbook(SQLModel, table=True):
         sa_column=Column(JSON)
     )
     is_active: bool = Field(default=True, nullable=False)
+    generation_status: GenerationStatus = Field(
+        sa_column=Column(
+            SAEnum(GenerationStatus, name="generation_status_enum"),
+            server_default=GenerationStatus.COMPLETED.value,
+            nullable=False
+        )
+    )
     
     created_at: datetime = Field(
         sa_column=Column(
@@ -107,6 +119,8 @@ class Rule(SQLModel, table=True):
         nullable=False
     )
     name: str = Field(nullable=False)
+    description: Optional[str] = Field(default=None, sa_column=Column(Text))
+    category: Optional[str] = Field(default="logic", nullable=False)
     is_active: bool = Field(default=True, nullable=False)
     
     created_at: datetime = Field(
