@@ -56,6 +56,13 @@ async def get_playbook(id: uuid.UUID, db: Session = Depends(get_session)):
 
 @router.patch("/playbooks/{id}", response_model=Playbook)
 async def update_playbook(id: uuid.UUID, playbook_in: PlaybookUpdate, db: Session = Depends(get_session)):
+    """
+    Update a playbook's details.
+    
+    NOTE: If 'is_active' is set to true, all other playbooks belonging 
+    to the same user will be automatically deactivated (is_active=false)
+    within the same database transaction.
+    """
     playbook = db.get(Playbook, id)
     if not playbook:
         logger.warning(f"[PLAYBOOK] Update failed: Playbook {id} not found")
@@ -65,6 +72,27 @@ async def update_playbook(id: uuid.UUID, playbook_in: PlaybookUpdate, db: Sessio
         )
     
     update_data = playbook_in.dict(exclude_unset=True)
+    
+    # NOTE: When a playbook is set to active (is_active=True), all other playbooks 
+    # for the same user are automatically deactivated to ensure only one 
+    # playbook is active at a time per user.
+    if update_data.get("is_active") is True:
+        logger.info(f"[PLAYBOOK] Activating playbook {id}. Auto-deactivating other playbooks for user {playbook.user_id}")
+        
+        # Identify other active playbooks for this user
+        deactivate_statement = (
+            select(Playbook)
+            .where(Playbook.user_id == playbook.user_id)
+            .where(Playbook.id != id)
+            .where(Playbook.is_active == True)
+        )
+        other_active_playbooks = db.exec(deactivate_statement).all()
+        
+        # Deactivate them (transactional update via the same DB session)
+        for other in other_active_playbooks:
+            other.is_active = False
+            db.add(other)
+
     for key, value in update_data.items():
         setattr(playbook, key, value)
     
