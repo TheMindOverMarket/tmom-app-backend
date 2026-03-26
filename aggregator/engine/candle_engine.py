@@ -130,3 +130,18 @@ class CandleEngine:
         )
         state.derived_timeframes[timeframe].append(derived_bar)
         logger.debug(f"Derived {timeframe} bar for {state.symbol} at {derived_bar.start_time}")
+
+    def clear_symbol_state(self, symbol: str):
+        """
+        Clears the state for a specific symbol. Useful for freeing resources when a session ends.
+        """
+        if symbol in self.symbol_states:
+            logger.info(f"[CANDLE_ENGINE] Clearing state for {symbol}")
+            del self.symbol_states[symbol]
+
+    def clear_all(self):
+        """
+        Clears all symbol states.
+        """
+        logger.info("[CANDLE_ENGINE] Clearing all symbol states")
+        self.symbol_states = {}

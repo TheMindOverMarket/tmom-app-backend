@@ -121,8 +121,8 @@ async def start_session(session_data: SessionCreate, db: Session = Depends(get_s
         db.commit()
         db.refresh(new_session)
         
-        # Mark as active globally for real-time logging
-        set_active_session(new_session.playbook_id, new_session.id)
+        # Mark as active globally for real-time logging and scoping
+        set_active_session(new_session.playbook_id, new_session.id, new_session.user_id)
         
         # Log systemic start event
         log_session_event(
@@ -140,7 +140,7 @@ async def start_session(session_data: SessionCreate, db: Session = Depends(get_s
         raise HTTPException(status_code=500, detail=f"Internal Server Error during session start: {str(e)}")
 
 @router.post("/{session_id}/end", response_model=SessionRead)
-def end_session(session_id: uuid.UUID, session_update: SessionUpdate, db: Session = Depends(get_session)):
+async def end_session(session_id: uuid.UUID, session_update: SessionUpdate, db: Session = Depends(get_session)):
     db_session = db.get(SessionModel, session_id)
     if not db_session:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -154,7 +154,17 @@ def end_session(session_id: uuid.UUID, session_update: SessionUpdate, db: Sessio
     db.commit()
     db.refresh(db_session)
     
-    # Remove from active registry
+    # 1. Resource Cleanup: Shut down Rule Engine state for this playbook's symbol
+    playbook = db.get(Playbook, db_session.playbook_id)
+    if playbook and playbook.context:
+        symbol = playbook.context.get("symbol")
+        if symbol:
+            import app.lifecycle
+            if app.lifecycle.candle_engine:
+                app.lifecycle.candle_engine.clear_symbol_state(symbol)
+                logger.info(f"[SESSION][END] Cleaned up engine state for {symbol} (Session: {session_id})")
+
+    # 2. Registry Cleanup
     remove_active_session(db_session.playbook_id)
     
     return db_session

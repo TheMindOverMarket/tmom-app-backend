@@ -318,14 +318,19 @@ class AlpacaTradingStream(AlpacaBaseStream):
 
                                 print(f"[USER_ACTIVITY][ENRICHED] {normalized_event.model_dump_json()}")
 
-                                # Emit downstream (MD 3 requirement)
+                                # 🚀 ANALYTICS LOGGING & SCOPED BROADCAST
+                                from app.sessions import _active_sessions, get_user_for_playbook
                                 from app.main import activity_broadcaster
-                                await activity_broadcaster.broadcast(normalized_event.model_dump_json())
-                                print(f"[USER_ACTIVITY][EMITTED] {normalized_event.model_dump_json()}")
-
-                                # 🚀 ANALYTICS LOGGING: Save to Session History
-                                from app.sessions import _active_sessions
+                                
                                 for playbook_id in _active_sessions.keys():
+                                    user_id = get_user_for_playbook(playbook_id)
+                                    
+                                    # 1. Scoped Broadcast to the specific user's WebSocket
+                                    if user_id:
+                                        await activity_broadcaster.broadcast(normalized_event.model_dump_json(), user_id=str(user_id))
+                                        print(f"[USER_ACTIVITY][EMITTED] Scoped to User: {user_id}")
+
+                                    # 2. Database Analytics Logging
                                     log_session_event(
                                         playbook_id=playbook_id,
                                         event_type=SessionEventType.TRADING,

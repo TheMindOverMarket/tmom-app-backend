@@ -160,27 +160,30 @@ async def health(db = Depends(get_session)) -> dict:
 
 @app.websocket("/ws/market-state")
 async def market_state_ws(websocket: WebSocket):
-    await market_broadcaster.connect(websocket)
+    user_id = websocket.query_params.get("user_id")
+    await market_broadcaster.connect(websocket, user_id=user_id)
     try:
         while True:
             await websocket.receive_text()
     except WebSocketDisconnect:
-        await market_broadcaster.disconnect(websocket)
+        await market_broadcaster.disconnect(websocket, user_id=user_id)
 
 @app.websocket("/ws/market-data")
 async def market_data_ws(websocket: WebSocket):
-    await market_broadcaster.connect(websocket)
+    user_id = websocket.query_params.get("user_id")
+    await market_broadcaster.connect(websocket, user_id=user_id)
     try:
         while True:
             await websocket.receive_text()
     except WebSocketDisconnect:
-        await market_broadcaster.disconnect(websocket)
+        await market_broadcaster.disconnect(websocket, user_id=user_id)
 
 @app.websocket("/ws/user-activity")
 async def user_activity_ws(websocket: WebSocket):
-    await activity_broadcaster.connect(websocket)
+    user_id = websocket.query_params.get("user_id")
+    await activity_broadcaster.connect(websocket, user_id=user_id)
     try:
         while True:
             await websocket.receive_text()
     except WebSocketDisconnect:
-        await activity_broadcaster.disconnect(websocket)
+        await activity_broadcaster.disconnect(websocket, user_id=user_id)
