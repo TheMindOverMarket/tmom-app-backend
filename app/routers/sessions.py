@@ -57,8 +57,7 @@ async def start_session(session_data: SessionCreate, db: Session = Depends(get_s
         for rule in rules:
             conditions = db.exec(select(Condition).where(Condition.rule_id == rule.id).where(Condition.is_active == True)).all()
             if not conditions:
-                logger.warning(f"[SESSION][START] Invalid rule: {rule.id} ({rule.name}) has no active conditions")
-                raise HTTPException(status_code=400, detail=f"Rule '{rule.name}' has no active conditions.")
+                logger.warning(f"[SESSION][START] Rule: {rule.id} ({rule.name}) has no active conditions. Proceeding anyway.")
 
         # 2. TRIGGER EXECUTION PHASE (Moved from StartStreamsCreation)
         logger.info(f"[SESSION][START] Initializing indicators and hydration for Playbook: {playbook.id}")
