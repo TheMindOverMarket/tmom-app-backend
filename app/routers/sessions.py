@@ -226,6 +226,25 @@ def add_session_event(session_id: uuid.UUID, event_data: SessionEventCreate, db:
     db.refresh(new_event)
     return new_event
 
+@router.get("/events/{event_id}", response_model=SessionEventRead)
+def get_session_event(event_id: uuid.UUID, db: Session = Depends(get_session)):
+    """Fetch a specific session event."""
+    event = db.get(SessionEventModel, event_id)
+    if not event:
+        raise HTTPException(status_code=404, detail="Session event not found")
+    return event
+
+@router.delete("/events/{event_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_session_event(event_id: uuid.UUID, db: Session = Depends(get_session)):
+    """Delete a specific session event."""
+    event = db.get(SessionEventModel, event_id)
+    if not event:
+        raise HTTPException(status_code=404, detail="Session event not found")
+    db.delete(event)
+    db.commit()
+    logger.info(f"[SESSION_EVENT] Event {event_id} deleted manually.")
+    return None
+
 @router.get("/{session_id}/replay", response_model=List[SessionEventRead])
 def get_session_replay(session_id: uuid.UUID, db: Session = Depends(get_session)):
     query = select(SessionEventModel).where(SessionEventModel.session_id == session_id).order_by(SessionEventModel.timestamp.asc())
