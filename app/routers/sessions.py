@@ -231,3 +231,28 @@ def add_session_event(session_id: uuid.UUID, event_data: SessionEventCreate, db:
 def get_session_replay(session_id: uuid.UUID, db: Session = Depends(get_session)):
     query = select(SessionEventModel).where(SessionEventModel.session_id == session_id).order_by(SessionEventModel.timestamp.asc())
     return db.exec(query).all()
+
+@router.delete("/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_session(session_id: uuid.UUID, db: Session = Depends(get_session)):
+    """
+    Permanently delete a session and all its associated events.
+    """
+    db_session = db.get(SessionModel, session_id)
+    if not db_session:
+        logger.warning(f"[SESSION] Delete failed: Session {session_id} not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, 
+            detail=f"Session with ID {session_id} not found."
+        )
+    
+    # 1. Manual cleanup of events (to avoid FK constraints if cascade not in DB schema)
+    events = db.exec(select(SessionEventModel).where(SessionEventModel.session_id == session_id)).all()
+    for event in events:
+        db.delete(event)
+    
+    # 2. Delete the session itself
+    db.delete(db_session)
+    db.commit()
+    
+    logger.info(f"[SESSION] Session {session_id} and its {len(events)} events deleted successfully.")
+    return None
