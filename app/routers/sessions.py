@@ -56,33 +56,56 @@ async def start_session(session_data: SessionCreate, db: Session = Depends(get_s
                             app.lifecycle.candle_engine.clear_symbol_state(symbol)
             db.flush() # Ensure old sessions are updated before starting a new one
 
-        # 1. VALIDATION PHASE
+        # 1. VALIDATION PHASE (Cascading Strategy Integrity Check)
+        from app.models import GenerationStatus, Rule, Condition
+        
         playbook = db.get(Playbook, session_data.playbook_id)
         if not playbook:
-            logger.warning(f"[SESSION][START] Failed: Playbook {session_data.playbook_id} not found")
+            logger.error(f"[SESSION][VALIDATION] Playbook {session_data.playbook_id} not found")
             raise HTTPException(status_code=404, detail="Playbook not found")
-        
-        # Check if playbook is active
-        if not playbook.is_active:
-            logger.warning(f"[SESSION][START] Failed: Playbook {playbook.id} is inactive")
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot start a session with an inactive playbook. Please activate it first.")
-
-        # Ensure ownership
+            
+        # A. Ownership Guard
         if playbook.user_id != session_data.user_id:
-            logger.warning(f"[SESSION][START] Unauthorized: User {session_data.user_id} tried to trigger Playbook {playbook.id}")
-            raise HTTPException(status_code=403, detail="Playbook does not belong to the specified user")
+            logger.warning(f"[SESSION][VALIDATION] Ownership mismatch. User {session_data.user_id} tried to start Playbook {playbook.id}")
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to start this playbook.")
 
-        # Hierarchy validation: Playbook -> Rules -> Conditions
-        rules = db.exec(select(Rule).where(Rule.playbook_id == playbook.id).where(Rule.is_active == True)).all()
-        if not rules:
-            logger.warning(f"[SESSION][START] Empty playbook: {playbook.id} has no active rules")
-            raise HTTPException(status_code=400, detail="Playbook has no active rules defined.")
+        # B. Activation Guard
+        if not playbook.is_active:
+             logger.warning(f"[SESSION][VALIDATION] Playbook {playbook.id} is inactive")
+             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot start a session with an inactive playbook. Please activate it first.")
+
+        # C. Generation State Guard
+        if playbook.generation_status != GenerationStatus.COMPLETED:
+            logger.warning(f"[SESSION][VALIDATION] Blocking session start. Playbook {playbook.id} is in status: {playbook.generation_status}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, 
+                detail=f"Cannot start session. Strategy for '{playbook.name}' is still being generated. Please wait until status is COMPLETED."
+            )
+            
+        # D. Structural Integrity Guard (Rules & Conditions)
+        rules_statement = select(Rule).where(Rule.playbook_id == playbook.id).where(Rule.is_active == True)
+        active_rules = db.exec(rules_statement).all()
         
-        # Check if rules have conditions
-        for rule in rules:
-            conditions = db.exec(select(Condition).where(Condition.rule_id == rule.id).where(Condition.is_active == True)).all()
-            if not conditions:
-                logger.warning(f"[SESSION][START] Rule: {rule.id} ({rule.name}) has no active conditions. Proceeding anyway.")
+        if not active_rules:
+            logger.warning(f"[SESSION][VALIDATION] Blocking session start. Playbook {playbook.id} has no active rules.")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, 
+                detail="Cannot start session. Playbook has no active rules defined. Please add/activate rules first."
+            )
+            
+        for rule in active_rules:
+            conditions_statement = select(Condition).where(Condition.rule_id == rule.id).where(Condition.is_active == True)
+            active_conditions = db.exec(conditions_statement).all()
+            if not active_conditions:
+                 logger.warning(f"[SESSION][VALIDATION] Blocking session start. Rule {rule.name} (ID: {rule.id}) has no active conditions.")
+                 raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST, 
+                    detail=f"Incomplete Strategy: Rule '{rule.name}' has no active conditions defined. Strategy cannot be verified."
+                )
+        
+        logger.info(f"[SESSION][VALIDATION] Playbook {playbook.name} passed all integrity checks.")
+
+        # 2. EXECUTION PREPARATION
 
         # 2. TRIGGER EXECUTION PHASE (Moved from StartStreamsCreation)
         logger.info(f"[SESSION][START] Initializing indicators and hydration for Playbook: {playbook.id}")
