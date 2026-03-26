@@ -3,6 +3,9 @@ from sqlmodel import Session, select
 from typing import List, Optional
 import uuid
 from datetime import datetime, timezone
+import logging
+
+logger = logging.getLogger(__name__)
 
 from app.database import get_session
 from app.models import Session as SessionModel, SessionEvent as SessionEventModel, SessionStatus, SessionEventType
@@ -13,21 +16,25 @@ router = APIRouter(prefix="/sessions", tags=["sessions"])
 
 @router.post("/start", response_model=SessionRead)
 def start_session(session_data: SessionCreate, db: Session = Depends(get_session)):
-    # Create new session
-    new_session = SessionModel(
-        user_id=session_data.user_id,
-        playbook_id=session_data.playbook_id,
-        session_metadata=session_data.session_metadata,
-        status=SessionStatus.STARTED
-    )
-    db.add(new_session)
-    db.commit()
-    db.refresh(new_session)
-    
-    # Mark as active globally for real-time logging
-    set_active_session(new_session.playbook_id, new_session.id)
-    
-    return new_session
+    try:
+        # Create new session
+        new_session = SessionModel(
+            user_id=session_data.user_id,
+            playbook_id=session_data.playbook_id,
+            session_metadata=session_data.session_metadata,
+            status=SessionStatus.STARTED
+        )
+        db.add(new_session)
+        db.commit()
+        db.refresh(new_session)
+        
+        # Mark as active globally for real-time logging
+        set_active_session(new_session.playbook_id, new_session.id)
+        
+        return new_session
+    except Exception as e:
+        logger.error(f"Error starting session for playbook {session_data.playbook_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Internal Server Error during session start")
 
 @router.post("/{session_id}/end", response_model=SessionRead)
 def end_session(session_id: uuid.UUID, session_update: SessionUpdate, db: Session = Depends(get_session)):
