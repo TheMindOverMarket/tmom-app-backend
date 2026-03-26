@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session, select
+from sqlalchemy import update as sa_update
 from typing import List, Optional, Any
 import uuid
 import logging
@@ -28,6 +29,18 @@ async def create_playbook(playbook_in: PlaybookCreate, db: Session = Depends(get
             status_code=status.HTTP_404_NOT_FOUND, 
             detail=f"Cannot create playbook. User with ID {playbook_in.user_id} does not exist."
         )
+    
+    # SYSTEM INVARIANT: Only one active playbook per user.
+    # If this new playbook is active, deactivate all others for this user first.
+    if playbook_in.is_active:
+        logger.info(f"[PLAYBOOK] Creating new ACTIVE playbook for user {playbook_in.user_id}. Deactivating all others.")
+        db.exec(
+            sa_update(Playbook)
+            .where(Playbook.user_id == playbook_in.user_id)
+            .values(is_active=False)
+        )
+        # Flush to ensure deactivation is staged before adding the new one
+        db.flush()
         
     playbook = Playbook(**playbook_in.dict())
     db.add(playbook)
@@ -79,19 +92,15 @@ async def update_playbook(id: uuid.UUID, playbook_in: PlaybookUpdate, db: Sessio
     if update_data.get("is_active") is True:
         logger.info(f"[PLAYBOOK] Activating playbook {id}. Auto-deactivating other playbooks for user {playbook.user_id}")
         
-        # Identify other active playbooks for this user
-        deactivate_statement = (
-            select(Playbook)
+        # Atomic bulk deactivation of all other playbooks for this user
+        db.exec(
+            sa_update(Playbook)
             .where(Playbook.user_id == playbook.user_id)
             .where(Playbook.id != id)
-            .where(Playbook.is_active == True)
+            .values(is_active=False)
         )
-        other_active_playbooks = db.exec(deactivate_statement).all()
-        
-        # Deactivate them (transactional update via the same DB session)
-        for other in other_active_playbooks:
-            other.is_active = False
-            db.add(other)
+        # Flush to ensure updates are sent to the DB before committing the entire session
+        db.flush()
 
     for key, value in update_data.items():
         setattr(playbook, key, value)
@@ -99,7 +108,7 @@ async def update_playbook(id: uuid.UUID, playbook_in: PlaybookUpdate, db: Sessio
     db.add(playbook)
     db.commit()
     db.refresh(playbook)
-    logger.info(f"[PLAYBOOK] Playbook updated: {id}")
+    logger.info(f"[PLAYBOOK] Playbook updated: {id} (is_active: {playbook.is_active})")
     return playbook
 
 @router.delete("/playbooks/{id}", status_code=status.HTTP_204_NO_CONTENT)
