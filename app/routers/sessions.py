@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from app.database import get_session
 from app.models import Session as SessionModel, SessionEvent as SessionEventModel, SessionStatus, SessionEventType, Playbook, Rule, Condition, User
 from app.schemas import SessionCreate, SessionUpdate, SessionRead, SessionEventCreate, SessionEventRead
-from app.sessions import set_active_session, remove_active_session, log_session_event
+from app.sessions import set_active_session, remove_active_session, log_session_event, get_active_session, _active_sessions
 from app.routers.market_data import get_market_history
 from aggregator.models import NormalizedBar
 
@@ -31,6 +31,32 @@ async def start_session(session_data: SessionCreate, db: Session = Depends(get_s
     4. Creates the session record.
     """
     try:
+        # SYSTEM INVARIANT: Only one active session per user.
+        existing_active_sessions = db.exec(
+            select(SessionModel)
+            .where(SessionModel.user_id == session_data.user_id)
+            .where(SessionModel.status == SessionStatus.STARTED)
+        ).all()
+        
+        if existing_active_sessions:
+            logger.info(f"[SESSION][START] Found {len(existing_active_sessions)} existing live sessions for user {session_data.user_id}. Terminating them.")
+            for old_session in existing_active_sessions:
+                old_session.status = SessionStatus.COMPLETED
+                old_session.end_time = datetime.now(timezone.utc)
+                db.add(old_session)
+                
+                # Cleanup registry and resources
+                remove_active_session(old_session.playbook_id)
+                # Cleanup engine state for the symbol
+                old_playbook = db.get(Playbook, old_session.playbook_id)
+                if old_playbook and old_playbook.context:
+                    symbol = old_playbook.context.get("symbol")
+                    if symbol:
+                        import app.lifecycle
+                        if app.lifecycle.candle_engine:
+                            app.lifecycle.candle_engine.clear_symbol_state(symbol)
+            db.flush() # Ensure old sessions are updated before starting a new one
+
         # 1. VALIDATION PHASE
         playbook = db.get(Playbook, session_data.playbook_id)
         if not playbook:

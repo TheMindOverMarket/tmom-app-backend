@@ -190,7 +190,20 @@ class AlpacaCryptoStream(AlpacaBaseStream):
                         indicator_values=snapshot["indicator_values"] # Metrics derived automatically
                     )
                     
-                    await market_broadcaster.broadcast(event.model_dump_json())
+                    # 🚀 SCOPED BROADCAST TO ALL ACTIVE SESSIONS
+                    from app.sessions import _active_sessions
+                    
+                    if _active_sessions:
+                        for playbook_id, session_id in _active_sessions.items():
+                            # Broadcast specifically to this session's subscribers
+                            await market_broadcaster.broadcast(
+                                event.model_dump_json(), 
+                                session_id=str(session_id)
+                            )
+                    else:
+                        # Fallback: Global broadcast if no specific sessions are active 
+                        # (useful for generic monitoring)
+                        await market_broadcaster.broadcast(event.model_dump_json())
             except asyncio.CancelledError:
                 break
             except Exception as e:
@@ -325,13 +338,16 @@ class AlpacaTradingStream(AlpacaBaseStream):
                                 from app.sessions import _active_sessions, get_user_for_playbook
                                 from app.main import activity_broadcaster
                                 
-                                for playbook_id in _active_sessions.keys():
+                                for playbook_id, session_id in _active_sessions.items():
                                     user_id = get_user_for_playbook(playbook_id)
                                     
-                                    # 1. Scoped Broadcast to the specific user's WebSocket
-                                    if user_id:
-                                        await activity_broadcaster.broadcast(normalized_event.model_dump_json(), user_id=str(user_id))
-                                        print(f"[USER_ACTIVITY][EMITTED] Scoped to User: {user_id}")
+                                    # 1. Scoped Broadcast to the specific session/user WebSocket
+                                    await activity_broadcaster.broadcast(
+                                        normalized_event.model_dump_json(), 
+                                        user_id=str(user_id) if user_id else None,
+                                        session_id=str(session_id)
+                                    )
+                                    print(f"[USER_ACTIVITY][EMITTED] Scoped to Session: {session_id}")
 
                                     # 2. Database Analytics Logging
                                     log_session_event(
