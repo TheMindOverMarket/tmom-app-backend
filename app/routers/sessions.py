@@ -7,17 +7,110 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+import logging
+import app.lifecycle
+from datetime import datetime, timezone
 from app.database import get_session
-from app.models import Session as SessionModel, SessionEvent as SessionEventModel, SessionStatus, SessionEventType
+from app.models import Session as SessionModel, SessionEvent as SessionEventModel, SessionStatus, SessionEventType, Playbook, Rule, Condition, User
 from app.schemas import SessionCreate, SessionUpdate, SessionRead, SessionEventCreate, SessionEventRead
-from app.sessions import set_active_session, remove_active_session
+from app.sessions import set_active_session, remove_active_session, log_session_event
+from app.routers.market_data import get_market_history
+from aggregator.models import NormalizedBar
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 
 @router.post("/start", response_model=SessionRead)
-def start_session(session_data: SessionCreate, db: Session = Depends(get_session)):
+async def start_session(session_data: SessionCreate, db: Session = Depends(get_session)):
+    """
+    Start a live session for a given playbook.
+    
+    This endpoint:
+    1. Validates the playbook is active and has rules/conditions.
+    2. Registers technical indicators.
+    3. Hydrates the engine with historical data.
+    4. Creates the session record.
+    """
     try:
-        # Create new session
+        # 1. VALIDATION PHASE
+        playbook = db.get(Playbook, session_data.playbook_id)
+        if not playbook:
+            logger.warning(f"[SESSION][START] Failed: Playbook {session_data.playbook_id} not found")
+            raise HTTPException(status_code=404, detail="Playbook not found")
+        
+        # Check if playbook is active
+        if not playbook.is_active:
+            logger.warning(f"[SESSION][START] Failed: Playbook {playbook.id} is inactive")
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot start a session with an inactive playbook. Please activate it first.")
+
+        # Ensure ownership
+        if playbook.user_id != session_data.user_id:
+            logger.warning(f"[SESSION][START] Unauthorized: User {session_data.user_id} tried to trigger Playbook {playbook.id}")
+            raise HTTPException(status_code=403, detail="Playbook does not belong to the specified user")
+
+        # Hierarchy validation: Playbook -> Rules -> Conditions
+        rules = db.exec(select(Rule).where(Rule.playbook_id == playbook.id).where(Rule.is_active == True)).all()
+        if not rules:
+            logger.warning(f"[SESSION][START] Empty playbook: {playbook.id} has no active rules")
+            raise HTTPException(status_code=400, detail="Playbook has no active rules defined.")
+        
+        # Check if rules have conditions
+        for rule in rules:
+            conditions = db.exec(select(Condition).where(Condition.rule_id == rule.id).where(Condition.is_active == True)).all()
+            if not conditions:
+                logger.warning(f"[SESSION][START] Invalid rule: {rule.id} ({rule.name}) has no active conditions")
+                raise HTTPException(status_code=400, detail=f"Rule '{rule.name}' has no active conditions.")
+
+        # 2. TRIGGER EXECUTION PHASE (Moved from StartStreamsCreation)
+        logger.info(f"[SESSION][START] Initializing indicators and hydration for Playbook: {playbook.id}")
+        
+        context = playbook.context or {}
+        ta_lib_metrics = context.get("ta_lib_metrics", [])
+
+        # Clear previous indicators before re-registering
+        app.lifecycle.indicator_registry.clear()
+
+        if ta_lib_metrics:
+            try:
+                for metric in ta_lib_metrics:
+                    app.lifecycle.indicator_registry.register(
+                        name=metric.get("name"),
+                        timeframe=metric.get("timeframe", "1m"),
+                        params=metric.get("params", {})
+                    )
+                logger.info(f"[SESSION][START] {len(ta_lib_metrics)} indicators registered")
+                
+                # 🚀 HYDRATION PHASE
+                try:
+                    raw_symbol = context.get("symbol", "BTC")
+                    alpaca_symbol = f"{raw_symbol}/USD" if "/" not in raw_symbol else raw_symbol
+                    
+                    market_bars = await get_market_history(symbol=alpaca_symbol, timeframe="1Min", limit=200)
+                    
+                    if market_bars:
+                        normalized_bars = [
+                            NormalizedBar(
+                                symbol=alpaca_symbol,  
+                                timeframe="1m",
+                                open=b.open,
+                                high=b.high,
+                                low=b.low,
+                                close=b.close,
+                                volume=0.0,
+                                start_time=datetime.fromtimestamp(b.time, tz=timezone.utc)
+                            ) for b in market_bars
+                        ]
+                        
+                        if app.lifecycle.candle_engine:
+                            app.lifecycle.candle_engine.hydrate_historical_bars(alpaca_symbol, normalized_bars)
+                            logger.info(f"[SESSION][START] Hydrated {len(normalized_bars)} historical bars for {alpaca_symbol}")
+                except Exception as e:
+                    logger.error(f"[SESSION][START] Failed to hydrate historical bars: {e}")
+                    
+            except Exception as e:
+                logger.error(f"[SESSION][START] Failed to register indicators: {e}")
+                raise HTTPException(status_code=400, detail=f"Invalid indicator configuration: {e}")
+
+        # 3. RECORD RECORDING PHASE
         new_session = SessionModel(
             user_id=session_data.user_id,
             playbook_id=session_data.playbook_id,
@@ -31,10 +124,20 @@ def start_session(session_data: SessionCreate, db: Session = Depends(get_session
         # Mark as active globally for real-time logging
         set_active_session(new_session.playbook_id, new_session.id)
         
+        # Log systemic start event
+        log_session_event(
+            playbook_id=playbook.id,
+            event_type=SessionEventType.SYSTEM,
+            event_data={"action": "START_SESSION", "status": "started"},
+            event_metadata={"session_id": str(new_session.id)}
+        )
+        
         return new_session
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error starting session for playbook {session_data.playbook_id}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Internal Server Error during session start")
+        raise HTTPException(status_code=500, detail=f"Internal Server Error during session start: {str(e)}")
 
 @router.post("/{session_id}/end", response_model=SessionRead)
 def end_session(session_id: uuid.UUID, session_update: SessionUpdate, db: Session = Depends(get_session)):

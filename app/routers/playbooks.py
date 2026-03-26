@@ -7,11 +7,6 @@ import logging
 from app.database import get_session
 from app.models import Playbook, User
 from app.schemas import PlaybookCreate, PlaybookUpdate, StartStreamsRequest, StartStreamsResponse
-import app.lifecycle
-from app.routers.market_data import get_market_history
-from aggregator.models import NormalizedBar
-from datetime import datetime, timezone
-import logging
 from app.sessions import log_session_event, get_active_session
 from app.models import SessionEventType
 
@@ -137,91 +132,4 @@ async def list_user_playbooks(user_id: uuid.UUID, db: Session = Depends(get_sess
     statement = select(Playbook).where(Playbook.user_id == user_id)
     return db.exec(statement).all()
 
-@router.post("/start_streams_creation", response_model=StartStreamsResponse, status_code=status.HTTP_202_ACCEPTED)
-async def start_streams_creation(request: StartStreamsRequest, db: Session = Depends(get_session)):
-    # Validate playbook existence
-    playbook = db.get(Playbook, request.playbook_id)
-    if not playbook:
-        logger.warning(f"[WORKFLOW][START_STREAMS] Failed: Playbook {request.playbook_id} not found")
-        raise HTTPException(status_code=404, detail="Playbook not found")
-        
-    # Validation: Ensure the user matches the playbook's owner
-    if playbook.user_id != request.user_id:
-        logger.warning(f"[WORKFLOW][START_STREAMS] Unauthorized access attempt: User {request.user_id} tried to trigger Playbook {request.playbook_id}")
-        raise HTTPException(status_code=403, detail="Playbook does not belong to the specified user")
-        
-    # Log the successful trigger
-    logger.info(f"[WORKFLOW][START_STREAMS] Request accepted for Playbook: {playbook.id} (User: {playbook.user_id})")
-    
-    # Register indicators if metrics are defined
-    context = playbook.context or {}
-    ta_lib_metrics = context.get("ta_lib_metrics", [])
-
-    # Clear previous indicators before re-registering
-    app.lifecycle.indicator_registry.clear()
-
-    if ta_lib_metrics:
-        try:
-            for metric in ta_lib_metrics:
-                app.lifecycle.indicator_registry.register(
-                    name=metric.get("name"),
-                    timeframe=metric.get("timeframe", "1m"),
-                    params=metric.get("params", {})
-                )
-            logger.info(f"[WORKFLOW][START_STREAMS] {len(ta_lib_metrics)} indicators registered")
-            
-            # 🚀 HYDRATION PHASE
-            try:
-                raw_symbol = context.get("symbol", "BTC")
-                alpaca_symbol = f"{raw_symbol}/USD" if "/" not in raw_symbol else raw_symbol
-                
-                market_bars = await get_market_history(symbol=alpaca_symbol, timeframe="1Min", limit=200)
-                
-                if market_bars:
-                    normalized_bars = [
-                        NormalizedBar(
-                            symbol=alpaca_symbol,  # Use exactly what the stream will use (or should it be raw_symbol?)
-                            timeframe="1m",
-                            open=b.open,
-                            high=b.high,
-                            low=b.low,
-                            close=b.close,
-                            volume=0.0,
-                            start_time=datetime.fromtimestamp(b.time, tz=timezone.utc)
-                        ) for b in market_bars
-                    ]
-                    
-                    if app.lifecycle.candle_engine:
-                        ## Depending on how the stream names the symbol (it uses BTC/USD typically)
-                        app.lifecycle.candle_engine.hydrate_historical_bars(alpaca_symbol, normalized_bars)
-                        logger.info(f"[WORKFLOW][START_STREAMS] Hydrated {len(normalized_bars)} historical bars for {alpaca_symbol}")
-            except Exception as e:
-                logger.error(f"[WORKFLOW][START_STREAMS] Failed to hydrate historical bars: {e}")
-                
-        except Exception as e:
-            logger.error(f"[WORKFLOW][START_STREAMS] Failed to register indicators: {e}")
-            raise HTTPException(status_code=400, detail=f"Invalid indicator configuration: {e}")
-    else:
-        logger.info("[WORKFLOW][START_STREAMS] No TA-Lib metrics defined, registry cleared")
-    
-    # Placeholder: Future asynchronous stream creation logic goes here
-    
-    # Returning a canonical success response
-    res = StartStreamsResponse(
-        status="accepted",
-        message="Stream creation workflow initiated successfully",
-        playbook=playbook
-    )
-
-    # Log to session if active
-    session_id = get_active_session(playbook.id)
-    if session_id:
-        log_session_event(
-            playbook_id=playbook.id,
-            event_type=SessionEventType.SYSTEM,
-            event_data={"action": "START_STREAMS", "status": "accepted"},
-            event_metadata={"session_id": str(session_id)}
-        )
-    
-    return res
 
