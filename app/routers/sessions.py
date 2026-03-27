@@ -185,7 +185,7 @@ async def start_session(
         )
         
         # 🚀 AUTOMATED RULE ENGINE TRIGGER
-        background_tasks.add_task(trigger_session_execution, new_session.playbook_id)
+        background_tasks.add_task(trigger_session_execution, new_session.playbook_id, new_session.id, new_session.user_id)
         
         return new_session
     except HTTPException:

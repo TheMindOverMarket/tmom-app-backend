@@ -45,13 +45,10 @@ async def analyze_playbook_execution(playbook_id: uuid.UUID):
                 raise Exception(f"Remote Rule Engine Error: {response.status_code}")
             
             logger.info(f"[INTELLIGENCE][SUCCESS] Rule Engine triggered. Response: {response.json()}")
-
-            # 3. Update Local Status
-            with Session(engine) as db:
-                playbook = db.get(Playbook, playbook_id)
-                playbook.generation_status = GenerationStatus.COMPLETED
-                db.add(playbook)
-                db.commit()
+            
+            # NOTE: We no longer mark status as COMPLETED here. 
+            # The Rule Engine service now handles patching the status itself 
+            # once compilation is physically finished.
             
     except Exception as e:
         logger.error(f"[INTELLIGENCE][EXCEPTION] Analysis trigger failed: {str(e)}")
@@ -62,17 +59,21 @@ async def analyze_playbook_execution(playbook_id: uuid.UUID):
                 db.add(playbook)
                 db.commit()
 
-async def trigger_session_execution(playbook_id: uuid.UUID):
+async def trigger_session_execution(playbook_id: uuid.UUID, session_id: uuid.UUID, user_id: uuid.UUID):
     """
     Called by /sessions/start to trigger rule evaluation in the 
     remote Rule Engine service.
     """
     trigger_url = f"{settings.rule_engine_base_url}/api/rules/execute"
-    params = {"playbook_id": str(playbook_id)}
+    params = {
+        "playbook_id": str(playbook_id),
+        "session_id": str(session_id),
+        "user_id": str(user_id)
+    }
     
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
-            logger.info(f"[RULE_ENGINE][EXECUTE] POST {trigger_url} (playbook:{playbook_id})")
+            logger.info(f"[RULE_ENGINE][EXECUTE] POST {trigger_url} (playbook:{playbook_id}, session:{session_id})")
             response = await client.post(trigger_url, params=params)
             response.raise_for_status()
             logger.info(f"[RULE_ENGINE][EXECUTE][SUCCESS] response: {response.json()}")
