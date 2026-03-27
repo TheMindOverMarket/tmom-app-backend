@@ -12,3 +12,6 @@ email-validator
 httpx
 TA-Lib
 numpy
+pytest
+pytest-asyncio
+pytest-mock
