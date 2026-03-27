@@ -7,9 +7,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-import logging
 import app.lifecycle
-from datetime import datetime, timezone
 from app.database import get_session
 from app.models import Session as SessionModel, SessionEvent as SessionEventModel, SessionStatus, SessionEventType, Playbook, Rule, Condition, User
 from app.schemas import SessionCreate, SessionUpdate, SessionRead, SessionEventCreate, SessionEventRead
@@ -52,13 +50,15 @@ async def start_session(
                 
                 # Cleanup registry and resources
                 remove_active_session(old_session.playbook_id)
+                
                 # Cleanup engine state for the symbol
                 old_playbook = db.get(Playbook, old_session.playbook_id)
                 if old_playbook and old_playbook.context:
                     symbol = old_playbook.context.get("symbol")
                     if symbol:
+                        alpaca_symbol = f"{symbol}/USD" if "/" not in symbol else symbol
                         if app.lifecycle.candle_engine:
-                            app.lifecycle.candle_engine.clear_symbol_state(symbol)
+                            app.lifecycle.candle_engine.clear_symbol_state(alpaca_symbol)
             db.flush() # Ensure old sessions are updated before starting a new one
 
         # 1. VALIDATION PHASE (Cascading Strategy Integrity Check)
@@ -111,60 +111,58 @@ async def start_session(
         logger.info(f"[SESSION][VALIDATION] Playbook {playbook.name} passed all integrity checks.")
 
         # 2. EXECUTION PREPARATION
-
-        # 2. TRIGGER EXECUTION PHASE (Moved from StartStreamsCreation)
         logger.info(f"[SESSION][START] Initializing indicators and hydration for Playbook: {playbook.id}")
         
+        # --- DYNAMIC STREAM CURATION ---
         context = playbook.context or {}
+        raw_symbol = context.get("symbol", "BTC")
+        alpaca_symbol = f"{raw_symbol}/USD" if "/" not in raw_symbol else raw_symbol
+        
+        # 1. Register indicators from context
         ta_lib_metrics = context.get("ta_lib_metrics", [])
         market_data_config = context.get("market_data", [])
-
-        # Clear previous indicators before re-registering
-        app.lifecycle.indicator_registry.clear()
-
-        # Support both formats for flexibility
         all_metrics = ta_lib_metrics + market_data_config
 
-        if all_metrics:
-            try:
-                for metric in all_metrics:
-                    app.lifecycle.indicator_registry.register(
-                        name=metric.get("name"),
-                        timeframe=metric.get("timeframe", "1m"),
-                        params=metric.get("params", {})
-                    )
-                logger.info(f"[SESSION][START] {len(all_metrics)} indicators registered (Metrics: {len(ta_lib_metrics)}, MarketData: {len(market_data_config)})")
-                
-                # 🚀 HYDRATION PHASE
+        if app.lifecycle.indicator_registry:
+            app.lifecycle.indicator_registry.clear()
+            if all_metrics:
                 try:
-                    raw_symbol = context.get("symbol", "BTC")
-                    alpaca_symbol = f"{raw_symbol}/USD" if "/" not in raw_symbol else raw_symbol
-                    
-                    market_bars = await get_market_history(symbol=alpaca_symbol, timeframe="1Min", limit=200)
-                    
-                    if market_bars:
-                        normalized_bars = [
-                            NormalizedBar(
-                                symbol=alpaca_symbol,  
-                                timeframe="1m",
-                                open=b.open,
-                                high=b.high,
-                                low=b.low,
-                                close=b.close,
-                                volume=0.0,
-                                start_time=datetime.fromtimestamp(b.time, tz=timezone.utc)
-                            ) for b in market_bars
-                        ]
-                        
-                        if app.lifecycle.candle_engine:
-                            app.lifecycle.candle_engine.hydrate_historical_bars(alpaca_symbol, normalized_bars)
-                            logger.info(f"[SESSION][START] Hydrated {len(normalized_bars)} historical bars for {alpaca_symbol}")
+                    for metric in all_metrics:
+                        app.lifecycle.indicator_registry.register(
+                            name=metric.get("name"),
+                            timeframe=metric.get("timeframe", "1m"),
+                            params=metric.get("params", {})
+                        )
+                    logger.info(f"[SESSION][START] {len(all_metrics)} indicators registered for {alpaca_symbol}")
                 except Exception as e:
-                    logger.error(f"[SESSION][START] Failed to hydrate historical bars: {e}")
-                    
-            except Exception as e:
-                logger.error(f"[SESSION][START] Failed to register indicators: {e}")
-                raise HTTPException(status_code=400, detail=f"Invalid indicator configuration: {e}")
+                    logger.error(f"[SESSION][START] Failed to register indicators: {e}")
+
+        # 2. Dynamic Alpaca Subscription
+        if app.lifecycle._stream:
+            await app.lifecycle._stream.subscribe_to_symbol(alpaca_symbol)
+            logger.info(f"[SESSION][START] Live stream requested for {alpaca_symbol}")
+
+        # 3. 🚀 HYDRATION PHASE (Sync Engine with Alpaca History)
+        try:
+            # Fetch enough bars (300) to satisfy lookbacks
+            market_bars = await get_market_history(symbol=alpaca_symbol, timeframe="1Min", limit=300)
+            if market_bars and app.lifecycle.candle_engine:
+                normalized_bars = [
+                    NormalizedBar(
+                        symbol=alpaca_symbol,
+                        timeframe="1m",
+                        open=float(b.open),
+                        high=float(b.high),
+                        low=float(b.low),
+                        close=float(b.close),
+                        volume=0.0,
+                        start_time=datetime.fromtimestamp(b.time, tz=timezone.utc)
+                    ) for b in market_bars
+                ]
+                app.lifecycle.candle_engine.hydrate_historical_bars(alpaca_symbol, normalized_bars)
+                logger.info(f"[SESSION][START] Hydrated engine with {len(normalized_bars)} bars for {alpaca_symbol}")
+        except Exception as e:
+            logger.warning(f"[SESSION][START] Hydration failed for {alpaca_symbol}: {e}")
 
         # 3. RECORD RECORDING PHASE
         new_session = SessionModel(
@@ -223,10 +221,10 @@ async def end_session(
     if playbook and playbook.context:
         symbol = playbook.context.get("symbol")
         if symbol:
-            import app.lifecycle
+            alpaca_symbol = f"{symbol}/USD" if "/" not in symbol else symbol
             if app.lifecycle.candle_engine:
-                app.lifecycle.candle_engine.clear_symbol_state(symbol)
-                logger.info(f"[SESSION][END] Cleaned up engine state for {symbol} (Session: {session_id})")
+                app.lifecycle.candle_engine.clear_symbol_state(alpaca_symbol)
+                logger.info(f"[SESSION][END] Cleaned up engine state for {alpaca_symbol} (Session: {session_id})")
 
     # 2. Registry Cleanup
     remove_active_session(db_session.playbook_id)
