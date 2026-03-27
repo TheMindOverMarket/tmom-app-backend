@@ -18,6 +18,23 @@ from app.rule_engine.intelligence import trigger_session_execution, trigger_sess
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 
+
+def _normalize_indicator_request(metric: object) -> tuple[str | None, str, dict]:
+    """
+    Accept either the rule-engine's TA-Lib metric objects or plain string market-data
+    fields and normalize them into the registry's expected shape.
+    """
+    if isinstance(metric, dict):
+        name = metric.get("name")
+        timeframe = metric.get("timeframe", "1m")
+        params = metric.get("params", {})
+        return name, timeframe, params if isinstance(params, dict) else {}
+
+    if isinstance(metric, str):
+        return metric, "1m", {}
+
+    return None, "1m", {}
+
 @router.post("/start", response_model=SessionRead)
 async def start_session(
     session_data: SessionCreate, 
@@ -128,10 +145,14 @@ async def start_session(
             if all_metrics:
                 try:
                     for metric in all_metrics:
+                        name, timeframe, params = _normalize_indicator_request(metric)
+                        if not name:
+                            logger.warning(f"[SESSION][START] Skipping malformed metric config: {metric!r}")
+                            continue
                         app.lifecycle.indicator_registry.register(
-                            name=metric.get("name"),
-                            timeframe=metric.get("timeframe", "1m"),
-                            params=metric.get("params", {})
+                            name=name,
+                            timeframe=timeframe,
+                            params=params
                         )
                     logger.info(f"[SESSION][START] {len(all_metrics)} indicators registered for {alpaca_symbol}")
                 except Exception as e:
