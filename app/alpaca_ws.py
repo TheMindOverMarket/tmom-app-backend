@@ -65,7 +65,7 @@ class AlpacaBaseStream:
 class AlpacaCryptoStream(AlpacaBaseStream):
     def __init__(self) -> None:
         super().__init__(ALPACA_CRYPTO_WS_URL)
-        self.symbols = ["BTC/USD"]
+        self.symbols = set() # Start empty, dynamic subscription-only 
         self.latest_market_state = {}  # Stores {symbol: event_dict}
 
     async def start(self) -> None:
@@ -173,7 +173,13 @@ class AlpacaCryptoStream(AlpacaBaseStream):
             try:
                 await asyncio.sleep(1.0)
                 
-                for symbol, snapshot in self.latest_market_state.items():
+                # Copy symbols to avoid concurrent modification errors
+                active_symbols = list(self.latest_market_state.keys())
+                
+                for symbol in active_symbols:
+                    snapshot = self.latest_market_state.get(symbol)
+                    if not snapshot:
+                        continue
                     # Legacy timestamp for frontend compatibility
                     # 6️⃣ Broadcast Behavior - Deterministic Timestamp
                     raw_ts = snapshot["last_tick_timestamp_ms"]
@@ -187,6 +193,10 @@ class AlpacaCryptoStream(AlpacaBaseStream):
                         price=snapshot["last_price"],
                         high=snapshot["current_candle_high"],
                         low=snapshot["current_candle_low"],
+                        vwap=snapshot.get("vwap"),
+                        close_5m=snapshot.get("close_5m"),
+                        prior_candle_high_5m=snapshot.get("prior_candle_high_5m"),
+                        prior_candle_low_5m=snapshot.get("prior_candle_low_5m"),
                         indicator_values=snapshot["indicator_values"] # Metrics derived automatically
                     )
                     
@@ -211,13 +221,39 @@ class AlpacaCryptoStream(AlpacaBaseStream):
         
         print(f"[{self.__class__.__name__}][EXITED_CLEANLY] Background task finished")
 
+    async def subscribe_to_symbol(self, symbol: str):
+        """
+        Dynamically subscribe to a new symbol at runtime.
+        """
+        if symbol in self.symbols:
+            logger.info(f"[ALPACA][SUBSCRIBE] Already subscribed to {symbol}")
+            return
+
+        self.symbols.add(symbol)
+        logger.info(f"[ALPACA][SUBSCRIBE] Added {symbol} to tracking set. Connection active: {self._ws is not None}")
+        
+        if self._ws:
+            subscribe_message = {
+                "action": "subscribe",
+                "quotes": [symbol]
+            }
+            try:
+                await self._ws.send(json.dumps(subscribe_message))
+                logger.info(f"[ALPACA][SUBSCRIBE_SENT] Subscription command sent for {symbol}")
+            except Exception as e:
+                logger.error(f"[ALPACA][SUBSCRIBE_ERROR] Failed to send subscribe command for {symbol}: {e}")
+
     async def _subscribe(self) -> None:
+        if not self.symbols:
+            logger.info("[ALPACA][SUBSCRIBE] No initial symbols to subscribe to.")
+            return
+
         subscribe_message = {
             "action": "subscribe",
-            "quotes": self.symbols
+            "quotes": list(self.symbols)
         }
         await self._ws.send(json.dumps(subscribe_message))
-        print(f"[ALPACA][SUBSCRIBE_SENT] Subscribed to quotes: {self.symbols}")
+        print(f"[ALPACA][SUBSCRIBE_SENT] Subscribed to quotes: {list(self.symbols)}")
 
 
 class AlpacaTradingStream(AlpacaBaseStream):
