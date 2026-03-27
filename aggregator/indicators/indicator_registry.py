@@ -1,4 +1,5 @@
 import logging
+import copy
 from typing import Any, Callable, Dict, List, Optional
 import numpy as np
 from aggregator.indicators.ta_lib_planner import IndicatorExecutionPlan, build_talib_execution_plans
@@ -109,5 +110,32 @@ class IndicatorRegistry:
             except Exception as e:
                 logger.error(f"Failed to compute {plan.name} for {symbol_state.symbol} on {timeframe}: {e}")
 
-        # Update cache
+        # 🚀 DERIVED INDICATORS (Custom logic for Rule Engine)
+        try:
+            # 1. SLOPES & BANDS
+            history = symbol_state.indicator_history.get(timeframe)
+            prior_results = history[-1] if history else {}
+            
+            # Find all indicators to compute slopes for
+            base_keys = list(results.keys())
+            for key in base_keys:
+                if key in prior_results:
+                    results[f"{key}_slope"] = results[key] - prior_results[key]
+            
+            # 2. VWAP BANDS (If ATR is present)
+            # Fetch ATR and VWAP (top-level)
+            atr_val = results.get("ATR") or results.get("ATR_14")
+            vwap_val = symbol_state.get_snapshot().get("vwap")
+            
+            if vwap_val and atr_val:
+                results["VWAP_minus_1.5_ATR"] = vwap_val - (1.5 * atr_val)
+                results["VWAP_plus_1.5_ATR"] = vwap_val + (1.5 * atr_val)
+                results["VWAP_minus_2_ATR"] = vwap_val - (2.0 * atr_val)
+                results["VWAP_plus_2_ATR"] = vwap_val + (2.0 * atr_val)
+
+        except Exception as e:
+            logger.error(f"Derived indicator computation failed: {e}")
+
+        # Update cache and history
         symbol_state.indicator_cache[timeframe] = results
+        symbol_state.indicator_history[timeframe].append(copy.deepcopy(results))

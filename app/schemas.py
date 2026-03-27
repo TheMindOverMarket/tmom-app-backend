@@ -14,6 +14,10 @@ class MarketStateEvent(BaseModel):
     price: float
     high: float
     low: float
+    vwap: Optional[float] = None
+    close_5m: Optional[float] = None
+    prior_candle_high_5m: Optional[float] = None
+    prior_candle_low_5m: Optional[float] = None
     metrics: Dict[str, float] = {}
     indicator_values: Dict[str, Dict[str, float]]
 
@@ -260,6 +264,10 @@ class MarketStateSnapshot(BaseModel):
     prior_candle_low: Optional[float] = None
     session_high: float
     session_low: float
+    vwap: Optional[float] = None
+    close_5m: Optional[float] = None
+    prior_candle_high_5m: Optional[float] = None
+    prior_candle_low_5m: Optional[float] = None
     indicator_values: Dict[str, Dict[str, float]]
 
 # --- Trade Schemas ---

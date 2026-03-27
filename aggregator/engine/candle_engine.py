@@ -39,6 +39,10 @@ class CandleEngine:
             state.update_last_price(last_bar.close)
             state.last_tick_timestamp_ms = int(last_bar.start_time.timestamp() * 1000)
             
+            # WARM UP VWAP from hydration data
+            state.vwap_total_pv = sum(b.close * b.volume for b in bars)
+            state.vwap_total_v = sum(b.volume for b in bars)
+            
         # Clear the current candle so the next live tick starts fresh
         state.current_1m_candle = None
         logger.info(f"[CANDLE_ENGINE] Hydration complete for {symbol}. Current 1m closed candles: {len(state.closed_1m_candles)}")
@@ -52,6 +56,10 @@ class CandleEngine:
         state = self.get_symbol_state(tick.symbol)
         state.update_last_price(tick.price)
         state.last_tick_timestamp_ms = int(tick.timestamp.timestamp() * 1000)
+
+        # UPDATE SESSION VWAP
+        state.vwap_total_pv += (tick.price * tick.size)
+        state.vwap_total_v += tick.size
 
         # Truncate to minute
         tick_minute = tick.timestamp.replace(second=0, microsecond=0)

@@ -117,19 +117,23 @@ async def start_session(
         
         context = playbook.context or {}
         ta_lib_metrics = context.get("ta_lib_metrics", [])
+        market_data_config = context.get("market_data", [])
 
         # Clear previous indicators before re-registering
         app.lifecycle.indicator_registry.clear()
 
-        if ta_lib_metrics:
+        # Support both formats for flexibility
+        all_metrics = ta_lib_metrics + market_data_config
+
+        if all_metrics:
             try:
-                for metric in ta_lib_metrics:
+                for metric in all_metrics:
                     app.lifecycle.indicator_registry.register(
                         name=metric.get("name"),
                         timeframe=metric.get("timeframe", "1m"),
                         params=metric.get("params", {})
                     )
-                logger.info(f"[SESSION][START] {len(ta_lib_metrics)} indicators registered")
+                logger.info(f"[SESSION][START] {len(all_metrics)} indicators registered (Metrics: {len(ta_lib_metrics)}, MarketData: {len(market_data_config)})")
                 
                 # 🚀 HYDRATION PHASE
                 try:

@@ -31,12 +31,23 @@ class SymbolState:
             "15m": {}
         }
         
+        # History of indicator results (for slopes)
+        self.indicator_history: Dict[str, deque[Dict[str, float]]] = {
+            "1m": deque(maxlen=max_lookback),
+            "5m": deque(maxlen=max_lookback),
+            "15m": deque(maxlen=max_lookback)
+        }
+        
         # Session high/low tracking
         self.session_high: float = float('-inf')
         self.session_low: float = float('inf')
         
         self.last_price: float = 0.0
         self.last_tick_timestamp_ms: Optional[int] = None
+        
+        # VWAP Tracking (Session start)
+        self.vwap_total_pv: float = 0.0
+        self.vwap_total_v: float = 0.0
 
     def update_last_price(self, price: float):
         self.last_price = price
@@ -52,6 +63,10 @@ class SymbolState:
         """
         prior_1m = self.closed_1m_candles[-1] if self.closed_1m_candles else None
         
+        # 5m Timeframe lookups
+        last_5m = self.derived_timeframes["5m"][-1] if self.derived_timeframes["5m"] else None
+        prior_5m = self.derived_timeframes["5m"][-2] if len(self.derived_timeframes["5m"]) > 1 else None
+        
         return {
             "symbol": self.symbol,
             "last_price": self.last_price,
@@ -62,5 +77,12 @@ class SymbolState:
             "prior_candle_low": prior_1m.low if prior_1m else None,
             "session_high": self.session_high,
             "session_low": self.session_low,
+            
+            # Additional Rule Engine fields
+            "vwap": (self.vwap_total_pv / self.vwap_total_v) if self.vwap_total_v > 0 else self.last_price,
+            "close_5m": last_5m.close if last_5m else self.last_price,
+            "prior_candle_high_5m": prior_5m.high if prior_5m else (last_5m.high if last_5m else self.last_price),
+            "prior_candle_low_5m": prior_5m.low if prior_5m else (last_5m.low if last_5m else self.last_price),
+
             "indicator_values": copy.deepcopy(self.indicator_cache)
         }
