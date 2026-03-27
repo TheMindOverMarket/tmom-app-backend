@@ -5,9 +5,12 @@ from typing import List, Optional, Any
 import uuid
 import logging
 from app.database import get_session
-from app.models import Playbook, User
-from app.models import SessionEventType, GenerationStatus
-from app.schemas import PlaybookCreate, PlaybookUpdate, StartStreamsRequest, StartStreamsResponse, PlaybookIngest
+from app.models import (
+    Playbook, User, Rule, Condition, ConditionEdge, 
+    Session as SessionModel, SessionEvent as SessionEventModel,
+    SessionEventType, GenerationStatus
+)
+from app.schemas import PlaybookCreate, PlaybookUpdate, PlaybookIngest
 from app.rule_engine.intelligence import analyze_playbook_execution
 
 logger = logging.getLogger(__name__)
@@ -26,7 +29,6 @@ async def create_playbook(playbook_in: PlaybookCreate, db: Session = Depends(get
         )
     
     # SYSTEM INVARIANT: Only one active playbook per user.
-    # If this new playbook is active, deactivate all others for this user first.
     if playbook_in.is_active:
         logger.info(f"[PLAYBOOK] Creating new ACTIVE playbook for user {playbook_in.user_id}. Deactivating all others.")
         db.exec(
@@ -34,7 +36,6 @@ async def create_playbook(playbook_in: PlaybookCreate, db: Session = Depends(get
             .where(Playbook.user_id == playbook_in.user_id)
             .values(is_active=False)
         )
-        # Flush to ensure deactivation is staged before adding the new one
         db.flush()
         
     playbook = Playbook(**playbook_in.dict())
@@ -55,9 +56,7 @@ async def ingest_playbook(
     1. Create a Playbook record with generation_status="PENDING".
     2. Atomic Invariant: Maintain only one active playbook per user.
     3. Lifecycle Trigger: Start LLM extraction in the background.
-    4. Response: Return the PENDING record immediately.
     """
-    # 1. Validate User
     user = db.get(User, playbook_in.user_id)
     if not user:
         logger.warning(f"[PLAYBOOK][INGEST] User {playbook_in.user_id} not found")
@@ -66,8 +65,6 @@ async def ingest_playbook(
             detail=f"Cannot ingest. User {playbook_in.user_id} not found."
         )
 
-    # 2. SYSTEM INVARIANT: Only one active playbook per user.
-    # New ingestions are ACTIVE by default, so deactivate all others.
     logger.info(f"[PLAYBOOK][INGEST] Creating new PENDING playbook for User: {playbook_in.user_id}")
     db.exec(
         sa_update(Playbook)
@@ -76,7 +73,6 @@ async def ingest_playbook(
     )
     db.flush()
 
-    # 3. Create the record (PENDING)
     playbook = Playbook(
         **playbook_in.dict(), 
         is_active=True,
@@ -86,9 +82,7 @@ async def ingest_playbook(
     db.commit()
     db.refresh(playbook)
     
-    # 4. Trigger Background Extraction (LLM Analyzer)
     background_tasks.add_task(analyze_playbook_execution, playbook.id)
-    
     logger.info(f"[PLAYBOOK][INGESTED] ID: {playbook.id} - Extraction Triggered")
     return playbook
 
@@ -112,13 +106,6 @@ async def get_playbook(id: uuid.UUID, db: Session = Depends(get_session)):
 
 @router.patch("/playbooks/{id}", response_model=Playbook)
 async def update_playbook(id: uuid.UUID, playbook_in: PlaybookUpdate, db: Session = Depends(get_session)):
-    """
-    Update a playbook's details.
-    
-    NOTE: If 'is_active' is set to true, all other playbooks belonging 
-    to the same user will be automatically deactivated (is_active=false)
-    within the same database transaction.
-    """
     playbook = db.get(Playbook, id)
     if not playbook:
         logger.warning(f"[PLAYBOOK] Update failed: Playbook {id} not found")
@@ -128,21 +115,14 @@ async def update_playbook(id: uuid.UUID, playbook_in: PlaybookUpdate, db: Sessio
         )
     
     update_data = playbook_in.dict(exclude_unset=True)
-    
-    # NOTE: When a playbook is set to active (is_active=True), all other playbooks 
-    # for the same user are automatically deactivated to ensure only one 
-    # playbook is active at a time per user.
     if update_data.get("is_active") is True:
         logger.info(f"[PLAYBOOK] Activating playbook {id}. Auto-deactivating other playbooks for user {playbook.user_id}")
-        
-        # Atomic bulk deactivation of all other playbooks for this user
         db.exec(
             sa_update(Playbook)
             .where(Playbook.user_id == playbook.user_id)
             .where(Playbook.id != id)
             .values(is_active=False)
         )
-        # Flush to ensure updates are sent to the DB before committing the entire session
         db.flush()
 
     for key, value in update_data.items():
@@ -156,6 +136,11 @@ async def update_playbook(id: uuid.UUID, playbook_in: PlaybookUpdate, db: Sessio
 
 @router.delete("/playbooks/{id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_playbook(id: uuid.UUID, db: Session = Depends(get_session)):
+    """
+    Cascading Delete Invariant:
+    Playbook -> Sessions -> SessionEvents
+    Playbook -> Rules -> Conditions -> ConditionEdges
+    """
     playbook = db.get(Playbook, id)
     if not playbook:
         logger.warning(f"[PLAYBOOK] Delete failed: Playbook {id} not found")
@@ -164,20 +149,45 @@ async def delete_playbook(id: uuid.UUID, db: Session = Depends(get_session)):
             detail=f"Cannot delete playbook. Playbook with ID {id} does not exist."
         )
     
+    logger.info(f"[PLAYBOOK][DELETE] Starting cascading cleanup for Playbook: {id}")
+    
+    # 1. Cleanup Sessions & Events
+    sessions = db.exec(select(SessionModel).where(SessionModel.playbook_id == id)).all()
+    for session in sessions:
+        events = db.exec(select(SessionEventModel).where(SessionEventModel.session_id == session.id)).all()
+        for event in events:
+            db.delete(event)
+        db.delete(session)
+    logger.info(f"[PLAYBOOK][DELETE] Cleaned up {len(sessions)} sessions and their events.")
+
+    # 2. Cleanup Rules, Conditions & Edges
+    rules = db.exec(select(Rule).where(Rule.playbook_id == id)).all()
+    for rule in rules:
+        # Delete edges first (FK to conditions and rules)
+        edges = db.exec(select(ConditionEdge).where(ConditionEdge.rule_id == rule.id)).all()
+        for edge in edges:
+            db.delete(edge)
+            
+        # Delete conditions
+        conditions = db.exec(select(Condition).where(Condition.rule_id == rule.id)).all()
+        for condition in conditions:
+            db.delete(condition)
+            
+        db.delete(rule)
+    logger.info(f"[PLAYBOOK][DELETE] Cleaned up {len(rules)} rules and their logic.")
+
+    # 3. Finally delete the playbook
     db.delete(playbook)
     db.commit()
-    logger.info(f"[PLAYBOOK] Playbook deleted: {id}")
+    
+    logger.info(f"[PLAYBOOK][DELETE] Playbook {id} and all associated data permanently removed.")
     return None
-
 
 @router.get("/users/{user_id}/playbooks", response_model=List[Playbook])
 async def list_user_playbooks(user_id: uuid.UUID, db: Session = Depends(get_session)):
-    # Validate user existence
     user = db.get(User, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
         
     statement = select(Playbook).where(Playbook.user_id == user_id)
     return db.exec(statement).all()
-
-
