@@ -1,41 +1,115 @@
 import logging
 import copy
+import re
+from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
 import numpy as np
+import talib
 from aggregator.indicators.ta_lib_planner import IndicatorExecutionPlan, build_talib_execution_plans
 from aggregator.indicators.symbol_state import SymbolState
 
 logger = logging.getLogger(__name__)
 
+@dataclass
+class DynamicIndicatorPlan:
+    name: str # e.g. "VWAP_minus_1.5_ATR" or "EMA_20_slope"
+    timeframe: str
+    required_indicators: List[str] # ["ATR"]
+    compute_fn: Callable[[Dict[str, float], Dict[str, float], SymbolState], float]
+
 class IndicatorRegistry:
     """
-    Generic TA-Lib layer. Manages registration and computation of indicators.
+    Generic aggregator layer. Manages registration and computation of indicators.
+    Supports both standard TA-Lib and dynamic "on-the-fly" derived fields.
     """
     def __init__(self):
         self.plans: Dict[str, List[IndicatorExecutionPlan]] = {}
+        self.dynamic_plans: Dict[str, List[DynamicIndicatorPlan]] = {}
 
     def clear(self):
         """
         Clears all registered indicators.
         """
         self.plans = {}
+        self.dynamic_plans = {}
         logger.info("Indicator registry cleared.")
 
     def register(self, name: str, timeframe: str = "1m", params: Optional[Dict[str, Any]] = None):
         """
-        Register a single TA-Lib indicator.
+        Register a single indicator.
+        Checks if it's a standard TA-Lib function or a dynamic derived field.
         """
-        metric_def = {
-            "name": name,
-            "params": params or {}
-        }
+        # 1. Check for Dynamic Patterns
         
-        new_plans = build_talib_execution_plans([metric_def])
-        if timeframe not in self.plans:
-            self.plans[timeframe] = []
+        # Pattern A: {BASE}_slope (e.g. EMA_20_slope)
+        slope_match = re.search(r'^(.*)_slope$', name)
+        if slope_match:
+            base_name = slope_match.group(1)
+            # Ensure base is registered (recursive call)
+            self.register(base_name, timeframe, params)
             
-        self.plans[timeframe].extend(new_plans)
-        logger.info(f"Registered {name} for {timeframe}.")
+            def compute_slope(current: Dict[str, float], prior: Dict[str, float], state: SymbolState) -> float:
+                return current.get(base_name, 0) - prior.get(base_name, 0)
+
+            self._add_dynamic_plan(DynamicIndicatorPlan(
+                name=name, timeframe=timeframe, required_indicators=[base_name], compute_fn=compute_slope
+            ))
+            return
+
+        # Pattern B: {BASE}_minus_{N}_ATR (e.g. VWAP_minus_1.5_ATR)
+        # Pattern C: {BASE}_plus_{N}_ATR
+        band_match = re.search(r'^(.*)_(plus|minus)_([\d\.]+)_ATR(?:_(\d+))?$', name)
+        if band_match:
+            base_name = band_match.group(1)
+            direction = band_match.group(2)
+            multiplier = float(band_match.group(3))
+            atr_period = band_match.group(4) or "14"
+            atr_key = f"ATR_{atr_period}"
+            
+            # Ensure base (if it's an indicator) and ATR are registered
+            if base_name.upper() in [f.upper() for f in talib.get_functions()]:
+                self.register(base_name, timeframe, params)
+            
+            self.register("ATR", timeframe, {"timeperiod": int(atr_period)})
+            
+            def compute_band(current: Dict[str, float], prior: Dict[str, float], state: SymbolState) -> float:
+                # Resolve base value (from indicators OR top-level snapshot)
+                base_val = current.get(base_name)
+                if base_val is None:
+                    # Fallback to top-level fields (e.g. VWAP, price)
+                    snapshot = state.get_snapshot()
+                    base_val = snapshot.get(base_name.lower()) or snapshot.get("last_price")
+                
+                atr_val = current.get(atr_key) or current.get("ATR")
+                if base_val is not None and atr_val is not None:
+                    offset = multiplier * atr_val
+                    return base_val + (offset if direction == "plus" else -offset)
+                return 0.0
+
+            self._add_dynamic_plan(DynamicIndicatorPlan(
+                name=name, timeframe=timeframe, required_indicators=[base_name, atr_key], compute_fn=compute_band
+            ))
+            return
+
+        # 2. Standard TA-Lib Fallback
+        try:
+            metric_def = {"name": name, "params": params or {}}
+            new_plans = build_talib_execution_plans([metric_def])
+            if timeframe not in self.plans:
+                self.plans[timeframe] = []
+            self.plans[timeframe].extend(new_plans)
+            logger.info(f"Registered TA-Lib indicator: {name} for {timeframe}")
+        except Exception:
+            # If not a valid TA-Lib func and no dynamic pattern matched, we skip or treat as top-level request
+            logger.warning(f"Requested field '{name}' is neither a known TA-Lib function nor a dynamic pattern. Skipping registration.")
+
+    def _add_dynamic_plan(self, plan: DynamicIndicatorPlan):
+        if plan.timeframe not in self.dynamic_plans:
+            self.dynamic_plans[plan.timeframe] = []
+        # Avoid duplicates
+        if not any(p.name == plan.name for p in self.dynamic_plans[plan.timeframe]):
+            self.dynamic_plans[plan.timeframe].append(plan)
+            logger.info(f"Registered Dynamic indicator: {plan.name} for {plan.timeframe}")
 
     def compute_for_timeframe(self, symbol_state: SymbolState, timeframe: str):
         """
@@ -75,31 +149,20 @@ class IndicatorRegistry:
         results = {}
         for plan in timeframe_plans:
             try:
-                # 1. Prepare raw positional arrays using the planner's guaranteed inputs
-                # Filter out missing keys to avoid KeyError just in case
                 input_arrays = [input_map[inp] for inp in plan.required_inputs if inp in input_map]
-                
-                # We need enough historical bars to actually compute the indicator. 
-                # timeperiod + 1 is generally a safe buffer to ensure TA-Lib produces a non-NaN value.
                 min_required = plan.params.get("timeperiod", 2)
                 if len(closes) <= min_required:
                     continue
 
-                # Execute Abstract Function directly passing strictly positional arrays
-                # This explicitly avoids TA-Lib's dictionary key-search logic which is throwing exceptions.
                 res = plan.function(*input_arrays, **plan.params)
 
-                # Handle multi-output vs single-output
                 if isinstance(res, (list, tuple, np.ndarray)):
-                    # Raw functions return arrays. We want the latest non-nan value.
                     if isinstance(res, (list, tuple)):
-                        # Some return multiple arrays (e.g. BBANDS)
-                        for i, name in enumerate(plan.output_fields):
+                        for i, o_name in enumerate(plan.output_fields):
                             val = res[i][-1]
                             if not np.isnan(val):
-                                results[name] = float(val)
+                                results[o_name] = float(val)
                     else:
-                        # Single array return
                         val = res[-1]
                         if not np.isnan(val):
                             results[plan.output_fields[0]] = float(val)
@@ -110,31 +173,21 @@ class IndicatorRegistry:
             except Exception as e:
                 logger.error(f"Failed to compute {plan.name} for {symbol_state.symbol} on {timeframe}: {e}")
 
-        # 🚀 DERIVED INDICATORS (Custom logic for Rule Engine)
+        # 🚀 DYNAMIC INDICATORS (Executed on-the-fly based on registration)
         try:
-            # 1. SLOPES & BANDS
             history = symbol_state.indicator_history.get(timeframe)
             prior_results = history[-1] if history else {}
             
-            # Find all indicators to compute slopes for
-            base_keys = list(results.keys())
-            for key in base_keys:
-                if key in prior_results:
-                    results[f"{key}_slope"] = results[key] - prior_results[key]
-            
-            # 2. VWAP BANDS (If ATR is present)
-            # Fetch ATR and VWAP (top-level)
-            atr_val = results.get("ATR") or results.get("ATR_14")
-            vwap_val = symbol_state.get_snapshot().get("vwap")
-            
-            if vwap_val and atr_val:
-                results["VWAP_minus_1.5_ATR"] = vwap_val - (1.5 * atr_val)
-                results["VWAP_plus_1.5_ATR"] = vwap_val + (1.5 * atr_val)
-                results["VWAP_minus_2_ATR"] = vwap_val - (2.0 * atr_val)
-                results["VWAP_plus_2_ATR"] = vwap_val + (2.0 * atr_val)
+            d_plans = self.dynamic_plans.get(timeframe, [])
+            for d_plan in d_plans:
+                try:
+                    val = d_plan.compute_fn(results, prior_results, symbol_state)
+                    results[d_plan.name] = float(val)
+                except Exception as e:
+                    logger.error(f"Failed to compute dynamic field {d_plan.name}: {e}")
 
         except Exception as e:
-            logger.error(f"Derived indicator computation failed: {e}")
+            logger.error(f"Dynamic indicator computation failed: {e}")
 
         # Update cache and history
         symbol_state.indicator_cache[timeframe] = results
