@@ -61,3 +61,37 @@ async def analyze_playbook_execution(playbook_id: uuid.UUID):
                 playbook.generation_status = GenerationStatus.FAILED
                 db.add(playbook)
                 db.commit()
+
+async def trigger_session_execution(playbook_id: uuid.UUID):
+    """
+    Called by /sessions/start to trigger rule evaluation in the 
+    remote Rule Engine service.
+    """
+    trigger_url = f"{settings.rule_engine_base_url}/api/rules/execute"
+    params = {"playbook_id": str(playbook_id)}
+    
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            logger.info(f"[RULE_ENGINE][EXECUTE] POST {trigger_url} (playbook:{playbook_id})")
+            response = await client.post(trigger_url, params=params)
+            response.raise_for_status()
+            logger.info(f"[RULE_ENGINE][EXECUTE][SUCCESS] response: {response.json()}")
+    except Exception as e:
+        logger.error(f"[RULE_ENGINE][EXECUTE][ERROR] Trigger failed for playbook {playbook_id}: {str(e)}")
+
+async def trigger_session_stop(playbook_id: uuid.UUID):
+    """
+    Called by /sessions/end to shut down rule engine processing
+    for a specific strategy.
+    """
+    stop_url = f"{settings.rule_engine_base_url}/api/rules/stop"
+    params = {"playbook_id": str(playbook_id)}
+    
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            logger.info(f"[RULE_ENGINE][STOP] GET {stop_url} (playbook:{playbook_id})")
+            response = await client.get(stop_url, params=params)
+            response.raise_for_status()
+            logger.info(f"[RULE_ENGINE][STOP][SUCCESS] response: {response.json()}")
+    except Exception as e:
+        logger.error(f"[RULE_ENGINE][STOP][ERROR] Shutdown failed for playbook {playbook_id}: {str(e)}")

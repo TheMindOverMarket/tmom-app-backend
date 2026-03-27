@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlmodel import Session, select
 from typing import List, Optional
 import uuid
@@ -16,11 +16,16 @@ from app.schemas import SessionCreate, SessionUpdate, SessionRead, SessionEventC
 from app.sessions import set_active_session, remove_active_session, log_session_event, get_active_session, _active_sessions
 from app.routers.market_data import get_market_history
 from aggregator.models import NormalizedBar
+from app.rule_engine.intelligence import trigger_session_execution, trigger_session_stop
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 
 @router.post("/start", response_model=SessionRead)
-async def start_session(session_data: SessionCreate, db: Session = Depends(get_session)):
+async def start_session(
+    session_data: SessionCreate, 
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_session)
+):
     """
     Start a live session for a given playbook.
     
@@ -179,6 +184,9 @@ async def start_session(session_data: SessionCreate, db: Session = Depends(get_s
             event_metadata={"session_id": str(new_session.id)}
         )
         
+        # 🚀 AUTOMATED RULE ENGINE TRIGGER
+        background_tasks.add_task(trigger_session_execution, new_session.playbook_id)
+        
         return new_session
     except HTTPException:
         raise
@@ -187,7 +195,12 @@ async def start_session(session_data: SessionCreate, db: Session = Depends(get_s
         raise HTTPException(status_code=500, detail=f"Internal Server Error during session start: {str(e)}")
 
 @router.post("/{session_id}/end", response_model=SessionRead)
-async def end_session(session_id: uuid.UUID, session_update: SessionUpdate, db: Session = Depends(get_session)):
+async def end_session(
+    session_id: uuid.UUID, 
+    session_update: SessionUpdate, 
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_session)
+):
     db_session = db.get(SessionModel, session_id)
     if not db_session:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -213,6 +226,9 @@ async def end_session(session_id: uuid.UUID, session_update: SessionUpdate, db: 
 
     # 2. Registry Cleanup
     remove_active_session(db_session.playbook_id)
+    
+    # 🚀 AUTOMATED RULE ENGINE SHUTDOWN
+    background_tasks.add_task(trigger_session_stop, db_session.playbook_id)
     
     return db_session
 
