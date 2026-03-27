@@ -2,15 +2,21 @@ from fastapi import APIRouter, HTTPException, status
 import httpx
 import os
 import logging
-from datetime import datetime
-from typing import List, Dict, Any
+from datetime import datetime, timezone
+from typing import List, Dict, Any, Optional
 from app.schemas import MarketBar, MarketHistoryResponse
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["market-data"])
 
 @router.get("/market-data/history", response_model=List[MarketBar])
-async def get_market_history(symbol: str = "BTC/USD", timeframe: str = "1Day", limit: int = 100):
+async def get_market_history(
+    symbol: str = "BTC/USD", 
+    timeframe: str = "1Day", 
+    limit: int = 100,
+    start_time: Optional[str] = None,
+    end_time: Optional[str] = None
+):
     api_key = os.getenv("ALPACA_API_KEY")
     api_sec = os.getenv("ALPACA_API_SECRET")
     
@@ -21,8 +27,28 @@ async def get_market_history(symbol: str = "BTC/USD", timeframe: str = "1Day", l
             detail="Market data provider credentials are not configured"
         )
     
-    # Alpaca Explicit API Request
-    url = f"https://data.alpaca.markets/v1beta3/crypto/us/bars?symbols={symbol}&timeframe={timeframe}&limit={limit}"
+    # Build Alpaca query parameters
+    params: Dict[str, Any] = {
+        "symbols": symbol,
+        "timeframe": timeframe
+    }
+    
+    if start_time:
+        # If it looks like a unix timestamp (digits only), convert to ISO
+        if isinstance(start_time, str) and start_time.isdigit():
+            start_time = datetime.fromtimestamp(int(start_time), tz=timezone.utc).isoformat().replace("+00:00", "Z")
+        params["start"] = start_time
+        
+    if end_time:
+        # If it looks like a unix timestamp (digits only), convert to ISO
+        if isinstance(end_time, str) and end_time.isdigit():
+            end_time = datetime.fromtimestamp(int(end_time), tz=timezone.utc).isoformat().replace("+00:00", "Z")
+        params["end"] = end_time
+        
+    if not start_time and not end_time:
+        params["limit"] = limit
+    
+    url = "https://data.alpaca.markets/v1beta3/crypto/us/bars"
     headers = {
         "APCA-API-KEY-ID": api_key,
         "APCA-API-SECRET-KEY": api_sec
@@ -30,7 +56,7 @@ async def get_market_history(symbol: str = "BTC/USD", timeframe: str = "1Day", l
     
     async with httpx.AsyncClient() as client:
         try:
-            response = await client.get(url, headers=headers)
+            response = await client.get(url, headers=headers, params=params)
             
             if response.status_code == 401:
                 logger.error(f"[MARKET_DATA] Unauthorized call to Alpaca: {response.text}")
