@@ -309,7 +309,6 @@ class SessionRead(BaseModel):
         from_attributes = True
 
 class SessionEventCreate(BaseModel):
-    session_id: uuid.UUID
     type: SessionEventType
     tick: Optional[int] = None
     event_data: Dict[str, Any]
