@@ -9,6 +9,7 @@ load_dotenv()
 
 _stream_task: Optional[asyncio.Task] = None
 _trading_stream_task: Optional[asyncio.Task] = None
+_session_worker_task: Optional[asyncio.Task] = None
 _stream: Optional[AlpacaCryptoStream] = None
 _trading_stream: Optional[AlpacaTradingStream] = None
 
@@ -33,6 +34,10 @@ async def on_startup() -> None:
 
     _stream_task = asyncio.create_task(run_stream())
     _trading_stream_task = asyncio.create_task(run_trading_stream())
+    
+    # Start high-performance session logger background worker
+    from app.sessions import process_event_batch_worker
+    _session_worker_task = asyncio.create_task(process_event_batch_worker())
 
 
 async def on_shutdown() -> None:
@@ -68,5 +73,15 @@ async def on_shutdown() -> None:
             await _trading_stream_task
         except asyncio.CancelledError:
              print("[LIFECYCLE][SHUTDOWN] Trading Data Task cancelled successfully")
+
+    # Finalize and flush background session logging
+    from app.sessions import shutdown_event_worker
+    await shutdown_event_worker()
+    if _session_worker_task:
+        _session_worker_task.cancel()
+        try:
+            await _session_worker_task
+        except asyncio.CancelledError:
+            print("[LIFECYCLE][SHUTDOWN] Session Logger Task finalized")
              
     print("[LIFECYCLE][SHUTDOWN] Shutdown sequence complete")
