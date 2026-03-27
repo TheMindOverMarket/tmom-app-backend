@@ -27,6 +27,11 @@ def remove_active_session(playbook_id: uuid.UUID):
     if playbook_id in _playbook_to_user:
         del _playbook_to_user[playbook_id]
 
+
+def clear_active_sessions():
+    _active_sessions.clear()
+    _playbook_to_user.clear()
+
 def log_session_event(
     playbook_id: uuid.UUID,
     event_type: SessionEventType,

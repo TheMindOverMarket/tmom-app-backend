@@ -143,6 +143,7 @@ async def execute_mock_trade(trade_req: TradeTriggerRequest):
 @app.get("/health")
 async def health(db = Depends(get_session)) -> dict:
     from sqlmodel import text
+    from app.lifecycle import get_runtime_status
     try:
         # Simple query to test DB connectivity
         db.execute(text("SELECT 1"))
@@ -154,7 +155,8 @@ async def health(db = Depends(get_session)) -> dict:
     return {
         "status": "ok" if db_status == "connected" else "degraded",
         "environment": settings.environment,
-        "database": db_status
+        "database": db_status,
+        "runtime": get_runtime_status(),
     }
 
 

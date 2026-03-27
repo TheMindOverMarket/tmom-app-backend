@@ -9,31 +9,13 @@ logger = logging.getLogger(__name__)
 
 import app.lifecycle
 from app.database import get_session
-from app.models import Session as SessionModel, SessionEvent as SessionEventModel, SessionStatus, SessionEventType, Playbook, Rule, Condition, User
+from app.models import Session as SessionModel, SessionEvent as SessionEventModel, SessionStatus, SessionEventType, Playbook, Rule, Condition
+from app.session_runtime import sync_runtime_from_database
 from app.schemas import SessionCreate, SessionUpdate, SessionRead, SessionEventCreate, SessionEventRead
-from app.sessions import set_active_session, remove_active_session, log_session_event, get_active_session, _active_sessions
-from app.routers.market_data import get_market_history
-from aggregator.models import NormalizedBar
+from app.sessions import remove_active_session, log_session_event
 from app.rule_engine.intelligence import trigger_session_execution, trigger_session_stop
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
-
-
-def _normalize_indicator_request(metric: object) -> tuple[str | None, str, dict]:
-    """
-    Accept either the rule-engine's TA-Lib metric objects or plain string market-data
-    fields and normalize them into the registry's expected shape.
-    """
-    if isinstance(metric, dict):
-        name = metric.get("name")
-        timeframe = metric.get("timeframe", "1m")
-        params = metric.get("params", {})
-        return name, timeframe, params if isinstance(params, dict) else {}
-
-    if isinstance(metric, str):
-        return metric, "1m", {}
-
-    return None, "1m", {}
 
 @router.post("/start", response_model=SessionRead)
 async def start_session(
@@ -127,65 +109,7 @@ async def start_session(
         
         logger.info(f"[SESSION][VALIDATION] Playbook {playbook.name} passed all integrity checks.")
 
-        # 2. EXECUTION PREPARATION
-        logger.info(f"[SESSION][START] Initializing indicators and hydration for Playbook: {playbook.id}")
-        
-        # --- DYNAMIC STREAM CURATION ---
-        context = playbook.context or {}
-        raw_symbol = context.get("symbol", "BTC")
-        alpaca_symbol = f"{raw_symbol}/USD" if "/" not in raw_symbol else raw_symbol
-        
-        # 1. Register indicators from context
-        ta_lib_metrics = context.get("ta_lib_metrics", [])
-        market_data_config = context.get("market_data", [])
-        all_metrics = ta_lib_metrics + market_data_config
-
-        if app.lifecycle.indicator_registry:
-            app.lifecycle.indicator_registry.clear()
-            if all_metrics:
-                try:
-                    for metric in all_metrics:
-                        name, timeframe, params = _normalize_indicator_request(metric)
-                        if not name:
-                            logger.warning(f"[SESSION][START] Skipping malformed metric config: {metric!r}")
-                            continue
-                        app.lifecycle.indicator_registry.register(
-                            name=name,
-                            timeframe=timeframe,
-                            params=params
-                        )
-                    logger.info(f"[SESSION][START] {len(all_metrics)} indicators registered for {alpaca_symbol}")
-                except Exception as e:
-                    logger.error(f"[SESSION][START] Failed to register indicators: {e}")
-
-        # 2. Dynamic Alpaca Subscription
-        if app.lifecycle._stream:
-            await app.lifecycle._stream.subscribe_to_symbol(alpaca_symbol)
-            logger.info(f"[SESSION][START] Live stream requested for {alpaca_symbol}")
-
-        # 3. 🚀 HYDRATION PHASE (Sync Engine with Alpaca History)
-        try:
-            # Fetch enough bars (300) to satisfy lookbacks
-            market_bars = await get_market_history(symbol=alpaca_symbol, timeframe="1Min", limit=300)
-            if market_bars and app.lifecycle.candle_engine:
-                normalized_bars = [
-                    NormalizedBar(
-                        symbol=alpaca_symbol,
-                        timeframe="1m",
-                        open=float(b.open),
-                        high=float(b.high),
-                        low=float(b.low),
-                        close=float(b.close),
-                        volume=0.0,
-                        start_time=datetime.fromtimestamp(b.time, tz=timezone.utc)
-                    ) for b in market_bars
-                ]
-                app.lifecycle.candle_engine.hydrate_historical_bars(alpaca_symbol, normalized_bars)
-                logger.info(f"[SESSION][START] Hydrated engine with {len(normalized_bars)} bars for {alpaca_symbol}")
-        except Exception as e:
-            logger.warning(f"[SESSION][START] Hydration failed for {alpaca_symbol}: {e}")
-
-        # 3. RECORD RECORDING PHASE
+        # 2. RECORD RECORDING PHASE
         new_session = SessionModel(
             user_id=session_data.user_id,
             playbook_id=session_data.playbook_id,
@@ -195,9 +119,8 @@ async def start_session(
         db.add(new_session)
         db.commit()
         db.refresh(new_session)
-        
-        # Mark as active globally for real-time logging and scoping
-        set_active_session(new_session.playbook_id, new_session.id, new_session.user_id)
+        logger.info(f"[SESSION][START] Rebuilding runtime state after creating session {new_session.id}")
+        await sync_runtime_from_database()
         
         # Log systemic start event
         log_session_event(
@@ -237,18 +160,8 @@ async def end_session(
     db.commit()
     db.refresh(db_session)
     
-    # 1. Resource Cleanup: Shut down Rule Engine state for this playbook's symbol
-    playbook = db.get(Playbook, db_session.playbook_id)
-    if playbook and playbook.context:
-        symbol = playbook.context.get("symbol")
-        if symbol:
-            alpaca_symbol = f"{symbol}/USD" if "/" not in symbol else symbol
-            if app.lifecycle.candle_engine:
-                app.lifecycle.candle_engine.clear_symbol_state(alpaca_symbol)
-                logger.info(f"[SESSION][END] Cleaned up engine state for {alpaca_symbol} (Session: {session_id})")
-
-    # 2. Registry Cleanup
-    remove_active_session(db_session.playbook_id)
+    logger.info(f"[SESSION][END] Rebuilding runtime state after ending session {session_id}")
+    await sync_runtime_from_database()
     
     # 🚀 AUTOMATED RULE ENGINE SHUTDOWN
     background_tasks.add_task(trigger_session_stop, db_session.playbook_id)
@@ -279,6 +192,7 @@ def add_session_event(session_id: uuid.UUID, event_data: SessionEventCreate, db:
     new_event = SessionEventModel(
         session_id=session_id,
         type=event_data.type,
+        timestamp=event_data.timestamp,
         tick=event_data.tick,
         event_data=event_data.event_data,
         event_metadata=event_data.event_metadata

@@ -310,6 +310,7 @@ class SessionRead(BaseModel):
 
 class SessionEventCreate(BaseModel):
     type: SessionEventType
+    timestamp: Optional[datetime] = None
     tick: Optional[int] = None
     event_data: Dict[str, Any]
     event_metadata: Optional[Dict[str, Any]] = None
