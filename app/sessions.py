@@ -26,6 +26,9 @@ def set_active_session(playbook_id: uuid.UUID, session_id: uuid.UUID, user_id: u
 def get_active_session(playbook_id: uuid.UUID) -> Optional[uuid.UUID]:
     return _active_sessions.get(playbook_id)
 
+def get_user_for_playbook(playbook_id: uuid.UUID) -> Optional[uuid.UUID]:
+    return _playbook_to_user.get(playbook_id)
+
 def remove_active_session(playbook_id: uuid.UUID):
     if playbook_id in _active_sessions:
         del _active_sessions[playbook_id]

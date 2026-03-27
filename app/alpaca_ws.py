@@ -9,7 +9,7 @@ import time
 from datetime import datetime, timezone
 from aggregator.models import NormalizedTick
 import app.lifecycle
-from app.sessions import log_session_event
+from app.sessions import _active_sessions, get_user_for_playbook, log_session_event
 from app.models import SessionEventType
 from app.schemas import UserActivityEvent
 
@@ -461,7 +461,6 @@ class AlpacaTradingStream(AlpacaBaseStream):
                                     print(f"[USER_ACTIVITY][ENRICHED] {normalized_event.model_dump_json()}")
 
                                     # 🚀 ANALYTICS LOGGING & SCOPED BROADCAST
-                                    from app.sessions import _active_sessions, get_user_for_playbook
                                     from app.main import activity_broadcaster
 
                                     for playbook_id, session_id in _active_sessions.items():
