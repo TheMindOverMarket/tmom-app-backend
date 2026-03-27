@@ -1,10 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlmodel import Session, select
+from sqlmodel import Session, select, or_
 from typing import List, Optional
 import uuid
 import logging
 from app.database import get_session
-from app.models import Condition, Rule
+from app.models import Condition, Rule, ConditionEdge
 from app.schemas import ConditionCreate, ConditionUpdate
 
 logger = logging.getLogger(__name__)
@@ -68,6 +68,10 @@ async def update_condition(id: uuid.UUID, condition_in: ConditionUpdate, db: Ses
 
 @router.delete("/conditions/{id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_condition(id: uuid.UUID, db: Session = Depends(get_session)):
+    """
+    Cascading Delete Invariant:
+    Condition -> ConditionEdges (linked as parent OR child)
+    """
     condition = db.get(Condition, id)
     if not condition:
         logger.warning(f"[CONDITION] Delete failed: Condition {id} not found")
@@ -76,11 +80,26 @@ async def delete_condition(id: uuid.UUID, db: Session = Depends(get_session)):
             detail=f"Cannot delete condition. Condition with ID {id} does not exist."
         )
     
+    logger.info(f"[CONDITION][DELETE] Starting cascading cleanup for Condition: {id}")
+
+    # 1. Cleanup ConditionEdges where this condition is either parent or child
+    edges_statement = select(ConditionEdge).where(
+        or_(
+            ConditionEdge.parent_condition_id == id,
+            ConditionEdge.child_condition_id == id
+        )
+    )
+    edges = db.exec(edges_statement).all()
+    for edge in edges:
+        db.delete(edge)
+    logger.info(f"[CONDITION][DELETE] Cleaned up {len(edges)} referencing condition edges.")
+
+    # 2. Finally delete the condition
     db.delete(condition)
     db.commit()
-    logger.info(f"[CONDITION] Condition deleted: {id}")
+    
+    logger.info(f"[CONDITION][DELETE] Condition {id} and its edges permanently removed.")
     return None
-
 
 @router.get("/rules/{rule_id}/conditions", response_model=List[Condition])
 async def list_rule_conditions(rule_id: uuid.UUID, db: Session = Depends(get_session)):

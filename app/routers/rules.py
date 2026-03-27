@@ -4,7 +4,7 @@ from typing import List, Optional
 import uuid
 import logging
 from app.database import get_session
-from app.models import Rule, Playbook
+from app.models import Rule, Playbook, Condition, ConditionEdge
 from app.schemas import RuleCreate, RuleUpdate
 
 logger = logging.getLogger(__name__)
@@ -68,6 +68,10 @@ async def update_rule(id: uuid.UUID, rule_in: RuleUpdate, db: Session = Depends(
 
 @router.delete("/rules/{id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_rule(id: uuid.UUID, db: Session = Depends(get_session)):
+    """
+    Cascading Delete Invariant:
+    Rule -> Conditions -> ConditionEdges
+    """
     rule = db.get(Rule, id)
     if not rule:
         logger.warning(f"[RULE] Delete failed: Rule {id} not found")
@@ -76,11 +80,26 @@ async def delete_rule(id: uuid.UUID, db: Session = Depends(get_session)):
             detail=f"Cannot delete rule. Rule with ID {id} does not exist."
         )
     
+    logger.info(f"[RULE][DELETE] Starting cascading cleanup for Rule: {id}")
+
+    # 1. Cleanup ConditionEdges for this rule
+    edges = db.exec(select(ConditionEdge).where(ConditionEdge.rule_id == id)).all()
+    for edge in edges:
+        db.delete(edge)
+    logger.info(f"[RULE][DELETE] Cleaned up {len(edges)} condition edges.")
+
+    # 2. Cleanup Conditions for this rule
+    conditions = db.exec(select(Condition).where(Condition.rule_id == id)).all()
+    for condition in conditions:
+        db.delete(condition)
+    logger.info(f"[RULE][DELETE] Cleaned up {len(conditions)} conditions.")
+
+    # 3. Finally delete the rule
     db.delete(rule)
     db.commit()
-    logger.info(f"[RULE] Rule deleted: {id}")
+    
+    logger.info(f"[RULE][DELETE] Rule {id} and all logical components permanently removed.")
     return None
-
 
 @router.get("/playbooks/{playbook_id}/rules", response_model=List[Rule])
 async def list_playbook_rules(playbook_id: uuid.UUID, db: Session = Depends(get_session)):
