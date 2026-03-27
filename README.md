@@ -6,6 +6,7 @@ Minimal FastAPI service that ingests live market data and streams normalized eve
 
 ```bash
 pip install -r requirements.txt
+alembic upgrade head
 uvicorn app.main:app --reload
 ```
 
