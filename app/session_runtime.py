@@ -33,7 +33,9 @@ def normalize_indicator_request(metric: object) -> tuple[str | None, str, dict]:
 
 
 def get_alpaca_symbol(context: Dict[str, Any] | None) -> str:
-    raw_symbol = (context or {}).get("symbol", "BTC")
+    raw_symbol = (context or {}).get("symbol")
+    if not raw_symbol:
+        raw_symbol = "BTC"
     return f"{raw_symbol}/USD" if "/" not in raw_symbol else raw_symbol
 
 
