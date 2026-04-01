@@ -42,11 +42,11 @@ class MarketStateBroadcaster:
                 self._global_clients.discard(websocket)
         print(f"[BROADCAST][{self.name}][CLIENT_DISCONNECTED] Client disc. from {session_id or user_id or 'global'} scope")
 
-    async def broadcast(self, message: str, user_id: Optional[str] = None, session_id: Optional[str] = None) -> None:
+    async def broadcast(self, message: str, user_id: Optional[str | list[str]] = None, session_id: Optional[str] = None) -> None:
         """
         Broadcasts a message with hierarchical targeting:
         - If session_id is provided, sends to session-specific clients.
-        - If user_id is provided, sends to user-wide clients (multiplexing).
+        - If user_id (or a list) is provided, sends to user-wide clients.
         - Always sends to global clients for generic monitoring/debugging.
         """
         if not user_id and not session_id:
@@ -57,7 +57,11 @@ class MarketStateBroadcaster:
             targets = set(self._global_clients)
             
             if user_id:
-                targets.update(self._user_clients.get(user_id, []))
+                if isinstance(user_id, list):
+                    for uid in user_id:
+                        targets.update(self._user_clients.get(uid, []))
+                else:
+                    targets.update(self._user_clients.get(user_id, []))
             
             if session_id:
                 targets.update(self._session_clients.get(session_id, []))

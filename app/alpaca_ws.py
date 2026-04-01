@@ -235,10 +235,17 @@ class AlpacaCryptoStream(AlpacaBaseStream):
                         indicator_values=snapshot["indicator_values"] # Metrics derived automatically
                     )
                     
-                    # 🚀 OPTIMIZED BROADCAST: 
-                    # Broadcast once globally. Hierarchical Hubs (user-scoped or session-scoped) 
-                    # will all receive this single broadcast.
-                    await market_broadcaster.broadcast(event.model_dump_json())
+                    # 🚀 SCOPED BROADCAST: 
+                    # Broadcast to specifically targeted user scopes interested in this symbol.
+                    # This satisfies strict multi-tenant requirements and ensures Rule Engines 
+                    # receive ticks correctly.
+                    from app.sessions import get_users_for_symbol
+                    interested_user_ids = [str(uid) for uid in get_users_for_symbol(symbol)]
+                    
+                    await market_broadcaster.broadcast(
+                        event.model_dump_json(),
+                        user_id=interested_user_ids if interested_user_ids else None
+                    )
             except asyncio.CancelledError:
                 break
             except Exception as e:

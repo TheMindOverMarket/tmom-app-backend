@@ -14,14 +14,23 @@ logger = logging.getLogger(__name__)
 _active_sessions: Dict[uuid.UUID, uuid.UUID] = {}
 # Key: playbook_id (UUID), Value: user_id (UUID)
 _playbook_to_user: Dict[uuid.UUID, uuid.UUID] = {}
+# Key: symbol (str), Value: Set of user_id (UUID)
+_symbol_to_users: Dict[str, set[uuid.UUID]] = {}
+# Key: playbook_id (UUID), Value: symbol (str)
+_playbook_to_symbol: Dict[uuid.UUID, str] = {}
 
 # High-Performance Logging Queue
 _event_queue: asyncio.Queue[Dict[str, Any]] = asyncio.Queue()
 _running = True
 
-def set_active_session(playbook_id: uuid.UUID, session_id: uuid.UUID, user_id: uuid.UUID):
+def set_active_session(playbook_id: uuid.UUID, session_id: uuid.UUID, user_id: uuid.UUID, symbol: str):
     _active_sessions[playbook_id] = session_id
     _playbook_to_user[playbook_id] = user_id
+    _playbook_to_symbol[playbook_id] = symbol
+    
+    if symbol not in _symbol_to_users:
+        _symbol_to_users[symbol] = set()
+    _symbol_to_users[symbol].add(user_id)
 
 def get_active_session(playbook_id: uuid.UUID) -> Optional[uuid.UUID]:
     return _active_sessions.get(playbook_id)
@@ -30,15 +39,32 @@ def get_user_for_playbook(playbook_id: uuid.UUID) -> Optional[uuid.UUID]:
     return _playbook_to_user.get(playbook_id)
 
 def remove_active_session(playbook_id: uuid.UUID):
+    user_id = _playbook_to_user.get(playbook_id)
+    symbol = _playbook_to_symbol.get(playbook_id)
+    
     if playbook_id in _active_sessions:
         del _active_sessions[playbook_id]
     if playbook_id in _playbook_to_user:
         del _playbook_to_user[playbook_id]
+    if playbook_id in _playbook_to_symbol:
+        del _playbook_to_symbol[playbook_id]
+        
+    if symbol and user_id and symbol in _symbol_to_users:
+        _symbol_to_users[symbol].discard(user_id)
+        if not _symbol_to_users[symbol]:
+            del _symbol_to_users[symbol]
 
 
 def clear_active_sessions():
     _active_sessions.clear()
     _playbook_to_user.clear()
+    _playbook_to_symbol.clear()
+    _symbol_to_users.clear()
+
+
+def get_users_for_symbol(symbol: str) -> set[uuid.UUID]:
+    """Returns the set of users interested in a given symbol."""
+    return _symbol_to_users.get(symbol, set())
 
 def log_session_event(
     playbook_id: uuid.UUID,

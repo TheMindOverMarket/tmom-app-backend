@@ -93,10 +93,9 @@ async def sync_runtime_from_database() -> dict[str, Any]:
                 continue
 
             restored_sessions += 1
-            set_active_session(playbook.id, db_session.id, db_session.user_id)
-
             context = playbook.context or {}
             alpaca_symbol = get_alpaca_symbol(context)
+            set_active_session(playbook.id, db_session.id, db_session.user_id, alpaca_symbol)
             active_symbols.add(alpaca_symbol)
 
             if app.lifecycle.indicator_registry:
