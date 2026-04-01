@@ -139,6 +139,7 @@ class PlaybookCreate(BaseModel):
     context: Optional[Dict[str, Any]] = None
     is_active: bool = True
     generation_status: GenerationStatus = GenerationStatus.COMPLETED
+    failure_reason: Optional[str] = None
 
     model_config = {
         "json_schema_extra": {
@@ -179,6 +180,7 @@ class PlaybookUpdate(BaseModel):
     context: Optional[Dict[str, Any]] = None
     is_active: Optional[bool] = None
     generation_status: Optional[GenerationStatus] = None
+    failure_reason: Optional[str] = None
 
 class PlaybookIngest(BaseModel):
     name: str

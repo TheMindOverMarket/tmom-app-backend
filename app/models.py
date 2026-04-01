@@ -87,6 +87,10 @@ class Playbook(SQLModel, table=True):
             nullable=False
         )
     )
+    failure_reason: Optional[str] = Field(
+        default=None,
+        sa_column=Column(Text, nullable=True)
+    )
     
     created_at: datetime = Field(
         sa_column=Column(
