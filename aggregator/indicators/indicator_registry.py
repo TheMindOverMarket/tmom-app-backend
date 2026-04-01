@@ -37,8 +37,11 @@ class IndicatorRegistry:
     def register(self, name: str, timeframe: str = "1m", params: Optional[Dict[str, Any]] = None):
         """
         Register a single indicator.
-        Checks if it's a standard TA-Lib function or a dynamic derived field.
+        Checks if it's a dynamic derived field or a standard TA-Lib function.
+        Fields NOT in either category (like 'price', 'vwap') are assumed to be base fields 
+        and are skipped silently.
         """
+        
         # 1. Check for Dynamic Patterns
         
         # Pattern A: {BASE}_slope (e.g. EMA_20_slope)
@@ -91,17 +94,21 @@ class IndicatorRegistry:
             ))
             return
 
-        # 2. Standard TA-Lib Fallback
-        try:
-            metric_def = {"name": name, "params": params or {}}
-            new_plans = build_talib_execution_plans([metric_def])
-            if timeframe not in self.plans:
-                self.plans[timeframe] = []
-            self.plans[timeframe].extend(new_plans)
-            logger.info(f"Registered TA-Lib indicator: {name} for {timeframe}")
-        except Exception:
-            # If not a valid TA-Lib func and no dynamic pattern matched, we skip or treat as top-level request
-            logger.warning(f"Requested field '{name}' is neither a known TA-Lib function nor a dynamic pattern. Skipping registration.")
+        # 2. Standard TA-Lib Check
+        if name.upper() in [f.upper() for f in talib.get_functions()]:
+            try:
+                metric_def = {"name": name, "params": params or {}}
+                new_plans = build_talib_execution_plans([metric_def])
+                if timeframe not in self.plans:
+                    self.plans[timeframe] = []
+                self.plans[timeframe].extend(new_plans)
+                logger.info(f"Registered TA-Lib indicator: {name} for {timeframe}")
+            except Exception as e:
+                logger.error(f"Failed to register TA-Lib indicator {name}: {e}")
+        else:
+            # Silently skip fields that aren't dynamic or TA-Lib indicators.
+            # These are assumed to be base fields provided by the market snapshot.
+            logger.debug(f"Skipping registration for base/snapshot field: {name}")
 
     def _add_dynamic_plan(self, plan: DynamicIndicatorPlan):
         if plan.timeframe not in self.dynamic_plans:
@@ -173,7 +180,7 @@ class IndicatorRegistry:
             except Exception as e:
                 logger.error(f"Failed to compute {plan.name} for {symbol_state.symbol} on {timeframe}: {e}")
 
-        # 🚀 DYNAMIC INDICATORS (Executed on-the-fly based on registration)
+        # DYNAMIC INDICATORS (Executed on-the-fly based on registration)
         try:
             history = symbol_state.indicator_history.get(timeframe)
             prior_results = history[-1] if history else {}
