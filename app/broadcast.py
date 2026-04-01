@@ -44,31 +44,33 @@ class MarketStateBroadcaster:
 
     async def broadcast(self, message: str, user_id: Optional[str] = None, session_id: Optional[str] = None) -> None:
         """
-        Broadcasts a message with hierarchical fallback:
-        - If session_id is provided, sends to session clients.
-        - If user_id is provided, sends to user clients.
-        - Otherwise, sends to global clients.
+        Broadcasts a message with hierarchical targeting:
+        - If session_id is provided, sends to session-specific clients.
+        - If user_id is provided, sends to user-wide clients (multiplexing).
+        - Always sends to global clients for generic monitoring/debugging.
         """
         if not user_id and not session_id:
             self._last_message = message
         
         async with self._lock:
-            targets = []
+            # Collect all unique targets across the hierarchy
+            targets = set(self._global_clients)
+            
+            if user_id:
+                targets.update(self._user_clients.get(user_id, []))
+            
             if session_id:
-                targets = list(self._session_clients.get(session_id, []))
-            elif user_id:
-                targets = list(self._user_clients.get(user_id, []))
-            else:
-                targets = list(self._global_clients)
+                targets.update(self._session_clients.get(session_id, []))
             
             if targets:
-                for ws in targets:
+                # We use a list to avoid issues if targets set is modified during iteration
+                for ws in list(targets):
                     try:
                         await ws.send_text(message)
                     except Exception:
+                        # Clean up stale connections
                         if session_id:
                             self._session_clients[session_id].discard(ws)
-                        elif user_id:
+                        if user_id:
                             self._user_clients[user_id].discard(ws)
-                        else:
-                            self._global_clients.discard(ws)
+                        self._global_clients.discard(ws)

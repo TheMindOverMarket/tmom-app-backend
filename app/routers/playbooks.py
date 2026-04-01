@@ -134,12 +134,41 @@ async def update_playbook(id: uuid.UUID, playbook_in: PlaybookUpdate, db: Sessio
     logger.info(f"[PLAYBOOK] Playbook updated: {id} (is_active: {playbook.is_active})")
     return playbook
 
-@router.delete("/playbooks/{id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_playbook(id: uuid.UUID, db: Session = Depends(get_session)):
+def _delete_playbook_cascading(db: Session, playbook_id: uuid.UUID):
     """
     Cascading Delete Invariant:
     Playbook -> Sessions -> SessionEvents
     Playbook -> Rules -> Conditions -> ConditionEdges
+    """
+    # 1. Cleanup Sessions & Events
+    sessions = db.exec(select(SessionModel).where(SessionModel.playbook_id == playbook_id)).all()
+    for session in sessions:
+        events = db.exec(select(SessionEventModel).where(SessionEventModel.session_id == session.id)).all()
+        for event in events:
+            db.delete(event)
+        db.delete(session)
+    
+    # 2. Cleanup Rules, Conditions & Edges
+    rules = db.exec(select(Rule).where(Rule.playbook_id == playbook_id)).all()
+    for rule in rules:
+        edges = db.exec(select(ConditionEdge).where(ConditionEdge.rule_id == rule.id)).all()
+        for edge in edges:
+            db.delete(edge)
+            
+        conditions = db.exec(select(Condition).where(Condition.rule_id == rule.id)).all()
+        for condition in conditions:
+            db.delete(condition)
+        db.delete(rule)
+        
+    # 3. Finally delete the playbook
+    playbook = db.get(Playbook, playbook_id)
+    if playbook:
+        db.delete(playbook)
+
+@router.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_playbook(id: uuid.UUID, db: Session = Depends(get_session)):
+    """
+    Permanently removes a playbook and all its associated logic/sessions.
     """
     playbook = db.get(Playbook, id)
     if not playbook:
@@ -150,37 +179,28 @@ async def delete_playbook(id: uuid.UUID, db: Session = Depends(get_session)):
         )
     
     logger.info(f"[PLAYBOOK][DELETE] Starting cascading cleanup for Playbook: {id}")
-    
-    # 1. Cleanup Sessions & Events
-    sessions = db.exec(select(SessionModel).where(SessionModel.playbook_id == id)).all()
-    for session in sessions:
-        events = db.exec(select(SessionEventModel).where(SessionEventModel.session_id == session.id)).all()
-        for event in events:
-            db.delete(event)
-        db.delete(session)
-    logger.info(f"[PLAYBOOK][DELETE] Cleaned up {len(sessions)} sessions and their events.")
-
-    # 2. Cleanup Rules, Conditions & Edges
-    rules = db.exec(select(Rule).where(Rule.playbook_id == id)).all()
-    for rule in rules:
-        # Delete edges first (FK to conditions and rules)
-        edges = db.exec(select(ConditionEdge).where(ConditionEdge.rule_id == rule.id)).all()
-        for edge in edges:
-            db.delete(edge)
-            
-        # Delete conditions
-        conditions = db.exec(select(Condition).where(Condition.rule_id == rule.id)).all()
-        for condition in conditions:
-            db.delete(condition)
-            
-        db.delete(rule)
-    logger.info(f"[PLAYBOOK][DELETE] Cleaned up {len(rules)} rules and their logic.")
-
-    # 3. Finally delete the playbook
-    db.delete(playbook)
+    _delete_playbook_cascading(db, id)
     db.commit()
-    
     logger.info(f"[PLAYBOOK][DELETE] Playbook {id} and all associated data permanently removed.")
+    return None
+
+@router.delete("/users/{user_id}/playbooks", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_all_user_playbooks(user_id: uuid.UUID, db: Session = Depends(get_session)):
+    """
+    Deletes all playbooks for a specific user.
+    """
+    user = db.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+        
+    playbooks = db.exec(select(Playbook).where(Playbook.user_id == user_id)).all()
+    logger.info(f"[PLAYBOOK][DELETE_ALL] Deleting {len(playbooks)} playbooks for user {user_id}")
+    
+    for pb in playbooks:
+        _delete_playbook_cascading(db, pb.id)
+        
+    db.commit()
+    logger.info(f"[PLAYBOOK][DELETE_ALL] All playbooks for user {user_id} have been removed.")
     return None
 
 @router.get("/users/{user_id}/playbooks", response_model=List[Playbook])

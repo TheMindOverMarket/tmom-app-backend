@@ -235,20 +235,10 @@ class AlpacaCryptoStream(AlpacaBaseStream):
                         indicator_values=snapshot["indicator_values"] # Metrics derived automatically
                     )
                     
-                    # 🚀 SCOPED BROADCAST TO ALL ACTIVE SESSIONS
-                    from app.sessions import _active_sessions
-                    
-                    if _active_sessions:
-                        for playbook_id, session_id in _active_sessions.items():
-                            # Broadcast specifically to this session's subscribers
-                            await market_broadcaster.broadcast(
-                                event.model_dump_json(), 
-                                session_id=str(session_id)
-                            )
-                    else:
-                        # Fallback: Global broadcast if no specific sessions are active 
-                        # (useful for generic monitoring)
-                        await market_broadcaster.broadcast(event.model_dump_json())
+                    # 🚀 OPTIMIZED BROADCAST: 
+                    # Broadcast once globally. Hierarchical Hubs (user-scoped or session-scoped) 
+                    # will all receive this single broadcast.
+                    await market_broadcaster.broadcast(event.model_dump_json())
             except asyncio.CancelledError:
                 break
             except Exception as e:
