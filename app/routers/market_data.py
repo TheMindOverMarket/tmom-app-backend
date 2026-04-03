@@ -12,13 +12,18 @@ router = APIRouter(tags=["market-data"])
 
 @router.get("/market-data/history", response_model=List[MarketBar])
 async def get_market_history(
-    symbol: str = "BTC/USD", 
+    symbol: str,
     timeframe: str = "1Day", 
     limit: int = 100,
     start_time: Optional[str] = None,
     end_time: Optional[str] = None
 ):
     symbol = normalize_market_symbol(symbol)
+    if not symbol:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="A market symbol is required to load history.",
+        )
     api_key = os.getenv("ALPACA_API_KEY")
     api_sec = os.getenv("ALPACA_API_SECRET")
     

@@ -123,7 +123,14 @@ async def trigger_session_execution(playbook_id: uuid.UUID, session_id: uuid.UUI
     """
     with Session(engine) as db:
         playbook = db.get(Playbook, playbook_id)
-        symbol = resolve_playbook_symbol(playbook) if playbook else "BTC/USD"
+        symbol = resolve_playbook_symbol(playbook) if playbook else ""
+
+    if not symbol:
+        logger.error(
+            "[RULE_ENGINE][EXECUTE][ERROR] Playbook %s has no persisted market symbol; aborting execute trigger.",
+            playbook_id,
+        )
+        return
 
     trigger_url = f"{settings.rule_engine_base_url}/api/rules/execute"
     params = {
@@ -150,7 +157,14 @@ async def trigger_session_stop(playbook_id: uuid.UUID):
     """
     with Session(engine) as db:
         playbook = db.get(Playbook, playbook_id)
-        symbol = resolve_playbook_symbol(playbook) if playbook else "BTC/USD"
+        symbol = resolve_playbook_symbol(playbook) if playbook else ""
+
+    if not symbol:
+        logger.error(
+            "[RULE_ENGINE][STOP][ERROR] Playbook %s has no persisted market symbol; aborting stop trigger.",
+            playbook_id,
+        )
+        return
 
     stop_url = f"{settings.rule_engine_base_url}/api/rules/stop"
     params = {"playbook_id": str(playbook_id), "symbol": symbol, "market": symbol}

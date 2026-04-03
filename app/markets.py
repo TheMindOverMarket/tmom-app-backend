@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from typing import Any
 
-DEFAULT_MARKET_SYMBOL = "BTC/USD"
-
 FALLBACK_MARKETS: list[dict[str, str]] = [
     {"symbol": "BTC/USD", "base_asset": "BTC", "quote_asset": "USD", "display_name": "Bitcoin / US Dollar", "provider": "fallback"},
     {"symbol": "ETH/USD", "base_asset": "ETH", "quote_asset": "USD", "display_name": "Ethereum / US Dollar", "provider": "fallback"},
@@ -16,11 +14,11 @@ FALLBACK_MARKETS: list[dict[str, str]] = [
 
 def normalize_market_symbol(value: str | None) -> str:
     if not value:
-        return DEFAULT_MARKET_SYMBOL
+        return ""
 
     normalized = value.strip().upper().replace("-", "/")
     if not normalized:
-        return DEFAULT_MARKET_SYMBOL
+        return ""
 
     if "/" not in normalized:
         normalized = f"{normalized}/USD"
@@ -29,14 +27,16 @@ def normalize_market_symbol(value: str | None) -> str:
     base_asset = base_asset.strip()
     quote_asset = quote_asset.strip() or "USD"
     if not base_asset:
-        base_asset = DEFAULT_MARKET_SYMBOL.split("/", 1)[0]
+        return ""
 
     return f"{base_asset}/{quote_asset}"
 
 
 def build_market_context(context: dict[str, Any] | None, symbol: str | None) -> dict[str, Any]:
     synced_context = dict(context or {})
-    synced_context["symbol"] = normalize_market_symbol(symbol or synced_context.get("symbol"))
+    normalized_symbol = normalize_market_symbol(symbol or synced_context.get("symbol"))
+    if normalized_symbol:
+        synced_context["symbol"] = normalized_symbol
     return synced_context
 
 
@@ -45,9 +45,9 @@ def sync_playbook_market_state(
     symbol: str | None = None,
     market: str | None = None,
     context: dict[str, Any] | None = None,
-) -> tuple[str, str, dict[str, Any]]:
+) -> tuple[str | None, str | None, dict[str, Any]]:
     canonical_symbol = normalize_market_symbol(symbol or market or (context or {}).get("symbol"))
-    return canonical_symbol, canonical_symbol, build_market_context(context, canonical_symbol)
+    return canonical_symbol or None, canonical_symbol or None, build_market_context(context, canonical_symbol)
 
 
 def resolve_playbook_symbol(playbook: Any) -> str:

@@ -93,7 +93,10 @@ async def ingest_playbook(
     db.flush()
 
     playbook_payload = playbook_in.model_dump()
-    playbook_payload["context"] = {"symbol": playbook_payload["symbol"]}
+    playbook_payload["context"] = {
+        "symbol": playbook_payload["symbol"],
+        "market": playbook_payload["market"],
+    }
     playbook_payload["is_active"] = True
     playbook_payload["generation_status"] = GenerationStatus.PENDING
     playbook = Playbook(**playbook_payload)

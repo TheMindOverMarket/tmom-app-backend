@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["utility"], prefix="/utility")
 class AlpacaOrderRequest(BaseModel):
-    symbol: str = "BTC/USD"
+    symbol: str
     qty: str = "0.01"
     side: str = "buy" # or "sell"
     type: str = "market"

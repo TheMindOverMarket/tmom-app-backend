@@ -86,7 +86,7 @@ class AdminUserAnalytics(BaseModel):
 # --- Playbook Schemas ---
 
 HARDCODED_PROMPT = """
-I'm using BTC.
+I'm using the selected market.
 
 1. Setup Logic (Deterministic Inputs)
 
@@ -160,7 +160,7 @@ class PlaybookCreate(BaseModel):
     # This is still not real auth and should be replaced by proper identity/session handling later.
     user_id: uuid.UUID
     symbol: Optional[str] = None
-    market: str = "BTC/USD"
+    market: str
     original_nl_input: str
     context: Optional[Dict[str, Any]] = None
     is_active: bool = True
@@ -170,14 +170,14 @@ class PlaybookCreate(BaseModel):
     model_config = {
         "json_schema_extra": {
             "example": {
-                "name": "Sample BTC Ruleset",
+                "name": "Sample Market Ruleset",
                 "user_id": "00000000-0000-0000-0000-000000000000",
-                "symbol": "BTC/USD",
-                "market": "BTC/USD",
+                "symbol": "ASSET/USD",
+                "market": "ASSET/USD",
                 "original_nl_input": HARDCODED_PROMPT,
                 "context": {
                     "description": "Auto-generated sample playbook from utility endpoint",
-                    "symbol": "BTC/USD"
+                    "symbol": "ASSET/USD"
                 },
                 "is_active": True
             }
@@ -235,7 +235,7 @@ class PlaybookIngest(BaseModel):
     name: str
     user_id: uuid.UUID
     symbol: Optional[str] = None
-    market: str = "BTC/USD"
+    market: str
     original_nl_input: str
 
     @model_validator(mode="after")
@@ -343,7 +343,7 @@ class MarketStateSnapshot(BaseModel):
 # --- Trade Schemas ---
 
 class TradeTriggerRequest(BaseModel):
-    symbol: str = "BTC/USD"
+    symbol: str
     qty: str = "0.001"
     side: str = "buy"
     type: str = "market"

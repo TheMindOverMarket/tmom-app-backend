@@ -86,8 +86,10 @@ class Playbook(SQLModel, table=True):
     # Temporary compatibility:
     # keep these optional at the ORM layer so older rows can still be read
     # while symbol/market migrations finish rolling out and backfills settle.
-    symbol: Optional[str] = Field(index=True, nullable=True, default="BTC/USD")
-    market: Optional[str] = Field(index=True, nullable=True, default="BTC/USD")
+    # Dirty implementation note: hydration in the playbook router still normalizes
+    # older rows on read until proper backfills/auth-driven ownership are in place.
+    symbol: Optional[str] = Field(index=True, nullable=True, default=None)
+    market: Optional[str] = Field(index=True, nullable=True, default=None)
     original_nl_input: str = Field(
         sa_column=Column(Text, nullable=False)
     )
