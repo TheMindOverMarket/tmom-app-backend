@@ -165,7 +165,7 @@ def _delete_playbook_cascading(db: Session, playbook_id: uuid.UUID):
     if playbook:
         db.delete(playbook)
 
-@router.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/playbooks/{id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_playbook(id: uuid.UUID, db: Session = Depends(get_session)):
     """
     Permanently removes a playbook and all its associated logic/sessions.

@@ -68,7 +68,7 @@ def test_delete_all_playbooks_only_clears_target_users_library(client, db_sessio
     db_session.add(other_playbook)
     db_session.commit()
 
-    response = client.delete(f"/playbooks/users/{test_user.id}/playbooks")
+    response = client.delete(f"/users/{test_user.id}/playbooks")
     assert response.status_code == 204
 
     assert db_session.get(Playbook, target_playbook.id) is None
