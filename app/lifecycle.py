@@ -16,6 +16,7 @@ _trading_stream_task: Optional[asyncio.Task] = None
 _session_worker_task: Optional[asyncio.Task] = None
 _stream: Optional[AlpacaCryptoStream] = None
 _trading_stream: Optional[AlpacaTradingStream] = None
+_startup_issues: list[str] = []
 
 # New Architecture Components
 indicator_registry: IndicatorRegistry = IndicatorRegistry()
@@ -23,13 +24,30 @@ candle_engine: CandleEngine = CandleEngine(indicator_registry)
 
 
 async def on_startup() -> None:
-    global _stream_task, _stream, _trading_stream_task, _trading_stream
+    global _stream_task, _stream, _trading_stream_task, _trading_stream, _startup_issues
 
-    _stream = AlpacaCryptoStream()
-    _trading_stream = AlpacaTradingStream()
+    _startup_issues = []
+    _stream = None
+    _trading_stream = None
 
-    runtime_summary = await sync_runtime_from_database()
-    logger.info(f"[LIFECYCLE][STARTUP] Runtime restored: {runtime_summary}")
+    try:
+        _stream = AlpacaCryptoStream()
+        _trading_stream = AlpacaTradingStream()
+    except Exception as exc:
+        issue = f"alpaca_streams_unavailable: {exc}"
+        _startup_issues.append(issue)
+        logger.warning(
+            "[LIFECYCLE][STARTUP] Alpaca stream bootstrap skipped; API will start without live streams: %s",
+            exc,
+        )
+
+    try:
+        runtime_summary = await sync_runtime_from_database()
+        logger.info(f"[LIFECYCLE][STARTUP] Runtime restored: {runtime_summary}")
+    except Exception as exc:
+        issue = f"runtime_sync_failed: {exc}"
+        _startup_issues.append(issue)
+        logger.exception("[LIFECYCLE][STARTUP] Runtime sync failed; continuing with empty in-memory state.")
 
     async def run_stream():
         print("Starting AlpacaCryptoStream task")
@@ -39,8 +57,12 @@ async def on_startup() -> None:
         print("Starting AlpacaTradingStream task")
         await _trading_stream.start()
 
-    _stream_task = asyncio.create_task(run_stream())
-    _trading_stream_task = asyncio.create_task(run_trading_stream())
+    _stream_task = None
+    _trading_stream_task = None
+    if _stream is not None:
+        _stream_task = asyncio.create_task(run_stream())
+    if _trading_stream is not None:
+        _trading_stream_task = asyncio.create_task(run_trading_stream())
     
     # Start high-performance session logger background worker
     from app.sessions import process_event_batch_worker
@@ -101,4 +123,5 @@ def get_runtime_status() -> dict[str, Any]:
         "active_session_count": len(_active_sessions),
         "market_stream": _stream.status_snapshot() if _stream else {"running": False, "connected": False},
         "trading_stream": _trading_stream.status_snapshot() if _trading_stream else {"running": False, "connected": False},
+        "startup_issues": list(_startup_issues),
     }
