@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import Optional, Dict, List, Any
 from pydantic import BaseModel, model_validator
-from app.models import SessionStatus, SessionEventType, Playbook, User, GenerationStatus
+from app.models import SessionStatus, SessionEventType, Playbook, User, UserRole, GenerationStatus
 from app.markets import sync_playbook_market_state
 
 # --- Core Event Schemas (Upstream Alpaca/Aggregator) ---
@@ -59,9 +59,29 @@ class UserActivityEvent(BaseModel):
 
 class UserCreate(BaseModel):
     email: str
+    role: Optional[UserRole] = UserRole.STANDARD
 
 class UserUpdate(BaseModel):
     email: Optional[str] = None
+    role: Optional[UserRole] = None
+
+class UserRead(BaseModel):
+    id: uuid.UUID
+    email: str
+    role: UserRole
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class AdminUserAnalytics(BaseModel):
+    user_id: uuid.UUID
+    email: str
+    latest_session_id: Optional[uuid.UUID] = None
+    latest_deviation_score: int = 0
+    session_status: Optional[SessionStatus] = None
+    last_updated: Optional[datetime] = None
 
 # --- Playbook Schemas ---
 

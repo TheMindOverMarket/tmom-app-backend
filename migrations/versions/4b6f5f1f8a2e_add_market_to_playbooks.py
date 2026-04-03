@@ -53,7 +53,7 @@ def upgrade() -> None:
         """
         UPDATE playbooks
         SET market = market || '/USD'
-        WHERE instr(market, '/') = 0
+        WHERE market NOT LIKE '%/%'
         """
     )
 

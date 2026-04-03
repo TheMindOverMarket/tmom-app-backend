@@ -26,6 +26,10 @@ class SessionEventType(str, Enum):
     TRADING = "TRADING"
     SYSTEM = "SYSTEM"
 
+class UserRole(str, Enum):
+    STANDARD = "STANDARD"
+    ADMIN = "ADMIN"
+
 class User(SQLModel, table=True):
     __tablename__ = "users"
     
@@ -39,6 +43,13 @@ class User(SQLModel, table=True):
         unique=True,
         index=True,
         nullable=False
+    )
+    role: UserRole = Field(
+        sa_column=Column(
+            SAEnum(UserRole, name="user_role_enum"),
+            server_default=UserRole.STANDARD.value,
+            nullable=False
+        )
     )
     
     created_at: datetime = Field(
