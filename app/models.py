@@ -72,6 +72,7 @@ class Playbook(SQLModel, table=True):
         nullable=False
     )
     name: str = Field(nullable=False)
+    market: str = Field(index=True, nullable=False, default="BTC/USD")
     original_nl_input: str = Field(
         sa_column=Column(Text, nullable=False)
     )

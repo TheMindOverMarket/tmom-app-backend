@@ -14,6 +14,7 @@ from app.session_runtime import sync_runtime_from_database
 from app.schemas import SessionCreate, SessionUpdate, SessionRead, SessionEventCreate, SessionEventRead
 from app.sessions import remove_active_session, log_session_event
 from app.rule_engine.intelligence import trigger_session_execution, trigger_session_stop
+from app.markets import resolve_playbook_market
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 
@@ -52,12 +53,10 @@ async def start_session(
                 
                 # Cleanup engine state for the symbol
                 old_playbook = db.get(Playbook, old_session.playbook_id)
-                if old_playbook and old_playbook.context:
-                    symbol = old_playbook.context.get("symbol")
-                    if symbol:
-                        alpaca_symbol = f"{symbol}/USD" if "/" not in symbol else symbol
-                        if app.lifecycle.candle_engine:
-                            app.lifecycle.candle_engine.clear_symbol_state(alpaca_symbol)
+                if old_playbook:
+                    alpaca_symbol = resolve_playbook_market(old_playbook)
+                    if app.lifecycle.candle_engine:
+                        app.lifecycle.candle_engine.clear_symbol_state(alpaca_symbol)
             db.flush() # Ensure old sessions are updated before starting a new one
 
         # 1. VALIDATION PHASE (Cascading Strategy Integrity Check)

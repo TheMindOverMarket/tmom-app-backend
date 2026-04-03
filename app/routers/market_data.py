@@ -4,7 +4,8 @@ import os
 import logging
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
-from app.schemas import MarketBar, MarketHistoryResponse
+from app.schemas import MarketBar, MarketHistoryResponse, MarketOption
+from app.markets import FALLBACK_MARKETS, normalize_market_symbol
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["market-data"])
@@ -17,6 +18,7 @@ async def get_market_history(
     start_time: Optional[str] = None,
     end_time: Optional[str] = None
 ):
+    symbol = normalize_market_symbol(symbol)
     api_key = os.getenv("ALPACA_API_KEY")
     api_sec = os.getenv("ALPACA_API_SECRET")
     
@@ -111,3 +113,57 @@ async def get_market_history(
                 detail="An unexpected error occurred while fetching market data"
             )
 
+
+@router.get("/market-data/markets", response_model=List[MarketOption])
+async def list_markets():
+    api_key = os.getenv("ALPACA_API_KEY")
+    api_sec = os.getenv("ALPACA_API_SECRET")
+
+    if not api_key or not api_sec:
+        return [MarketOption(**market) for market in FALLBACK_MARKETS]
+
+    headers = {
+        "APCA-API-KEY-ID": api_key,
+        "APCA-API-SECRET-KEY": api_sec,
+    }
+    params = {
+        "status": "active",
+        "asset_class": "crypto",
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.get(
+                "https://paper-api.alpaca.markets/v2/assets",
+                headers=headers,
+                params=params,
+            )
+            response.raise_for_status()
+    except Exception as exc:
+        logger.warning(f"[MARKET_DATA] Falling back to static market list: {exc}")
+        return [MarketOption(**market) for market in FALLBACK_MARKETS]
+
+    market_map: dict[str, MarketOption] = {}
+    for asset in response.json():
+        raw_symbol = str(asset.get("symbol") or "").strip()
+        if not raw_symbol:
+            continue
+
+        normalized_symbol = normalize_market_symbol(raw_symbol.replace("USD", "/USD") if "/" not in raw_symbol and raw_symbol.endswith("USD") else raw_symbol)
+        base_asset, quote_asset = normalized_symbol.split("/", 1)
+        if quote_asset != "USD":
+            continue
+
+        display_name = asset.get("name") or f"{base_asset} / {quote_asset}"
+        market_map[normalized_symbol] = MarketOption(
+            symbol=normalized_symbol,
+            base_asset=base_asset,
+            quote_asset=quote_asset,
+            display_name=display_name,
+            provider="alpaca",
+        )
+
+    if not market_map:
+        return [MarketOption(**market) for market in FALLBACK_MARKETS]
+
+    return sorted(market_map.values(), key=lambda market: market.symbol)

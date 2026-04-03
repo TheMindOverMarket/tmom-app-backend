@@ -22,6 +22,7 @@ async def test_demo_flow_lifecycle(client, db_session: Session, test_user: User)
         playbook_payload = {
             "name": "Demo Strategy",
             "user_id": str(test_user.id),
+            "market": "ETH/USD",
             "original_nl_input": "I want to buy BTC when price is below VWAP."
         }
         
@@ -30,6 +31,7 @@ async def test_demo_flow_lifecycle(client, db_session: Session, test_user: User)
         playbook_data = response.json()
         playbook_id = uuid.UUID(playbook_data["id"])
         assert playbook_data["generation_status"] == "PENDING"
+        assert playbook_data["market"] == "ETH/USD"
         
         # Verify background task was triggered
         mock_extract.assert_called_once()
@@ -39,7 +41,8 @@ async def test_demo_flow_lifecycle(client, db_session: Session, test_user: User)
     # ability to handle the COMPLETED state and rules.
     pb = db_session.get(Playbook, playbook_id)
     pb.generation_status = GenerationStatus.COMPLETED
-    pb.context = {"symbol": "BTC/USD"}
+    pb.market = "ETH/USD"
+    pb.context = {"symbol": "ETH/USD"}
     db_session.add(pb)
     
     # Add rules and conditions so the session start integrity check passes
