@@ -18,6 +18,23 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["playbooks"])
 
+
+def _hydrate_playbook_market_fields(playbook: Playbook) -> Playbook:
+    """
+    Temporary compatibility shim:
+    older playbook rows may still be missing symbol/market while the migration
+    rollout settles. Normalize them in-memory so reads do not 500.
+    """
+    symbol, market, context = sync_playbook_market_state(
+        symbol=playbook.symbol,
+        market=playbook.market,
+        context=playbook.context,
+    )
+    playbook.symbol = symbol
+    playbook.market = market
+    playbook.context = context
+    return playbook
+
 @router.post("/playbooks/", response_model=Playbook, status_code=status.HTTP_201_CREATED)
 async def create_playbook(playbook_in: PlaybookCreate, db: Session = Depends(get_session)):
     # Validate user exists
@@ -93,7 +110,8 @@ async def list_playbooks(user_id: Optional[uuid.UUID] = None, db: Session = Depe
     statement = select(Playbook)
     if user_id:
         statement = statement.where(Playbook.user_id == user_id)
-    return db.exec(statement).all()
+    playbooks = db.exec(statement).all()
+    return [_hydrate_playbook_market_fields(playbook) for playbook in playbooks]
 
 @router.get("/playbooks/{id}", response_model=Playbook)
 async def get_playbook(id: uuid.UUID, db: Session = Depends(get_session)):
@@ -104,7 +122,7 @@ async def get_playbook(id: uuid.UUID, db: Session = Depends(get_session)):
             status_code=status.HTTP_404_NOT_FOUND, 
             detail=f"Playbook with ID {id} was not found."
         )
-    return playbook
+    return _hydrate_playbook_market_fields(playbook)
 
 @router.patch("/playbooks/{id}", response_model=Playbook)
 async def update_playbook(id: uuid.UUID, playbook_in: PlaybookUpdate, db: Session = Depends(get_session)):
@@ -221,4 +239,5 @@ async def list_user_playbooks(user_id: uuid.UUID, db: Session = Depends(get_sess
         raise HTTPException(status_code=404, detail="User not found")
         
     statement = select(Playbook).where(Playbook.user_id == user_id)
-    return db.exec(statement).all()
+    playbooks = db.exec(statement).all()
+    return [_hydrate_playbook_market_fields(playbook) for playbook in playbooks]

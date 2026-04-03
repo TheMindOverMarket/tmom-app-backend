@@ -83,8 +83,11 @@ class Playbook(SQLModel, table=True):
         nullable=False
     )
     name: str = Field(nullable=False)
-    symbol: str = Field(index=True, nullable=False, default="BTC/USD")
-    market: str = Field(index=True, nullable=False, default="BTC/USD")
+    # Temporary compatibility:
+    # keep these optional at the ORM layer so older rows can still be read
+    # while symbol/market migrations finish rolling out and backfills settle.
+    symbol: Optional[str] = Field(index=True, nullable=True, default="BTC/USD")
+    market: Optional[str] = Field(index=True, nullable=True, default="BTC/USD")
     original_nl_input: str = Field(
         sa_column=Column(Text, nullable=False)
     )
