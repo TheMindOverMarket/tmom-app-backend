@@ -12,7 +12,7 @@ from app.models import (
 )
 from app.schemas import PlaybookCreate, PlaybookUpdate, PlaybookIngest
 from app.rule_engine.intelligence import analyze_playbook_execution
-from app.markets import build_market_context, normalize_market_symbol
+from app.markets import sync_playbook_market_state
 
 logger = logging.getLogger(__name__)
 
@@ -40,8 +40,6 @@ async def create_playbook(playbook_in: PlaybookCreate, db: Session = Depends(get
         db.flush()
         
     playbook_payload = playbook_in.model_dump()
-    playbook_payload["market"] = normalize_market_symbol(playbook_payload["market"])
-    playbook_payload["context"] = build_market_context(playbook_payload.get("context"), playbook_payload["market"])
     playbook = Playbook(**playbook_payload)
     db.add(playbook)
     db.commit()
@@ -77,12 +75,11 @@ async def ingest_playbook(
     )
     db.flush()
 
-    playbook = Playbook(
-        **playbook_in.model_dump(),
-        context=build_market_context(None, playbook_in.market),
-        is_active=True,
-        generation_status=GenerationStatus.PENDING
-    )
+    playbook_payload = playbook_in.model_dump()
+    playbook_payload["context"] = {"symbol": playbook_payload["symbol"]}
+    playbook_payload["is_active"] = True
+    playbook_payload["generation_status"] = GenerationStatus.PENDING
+    playbook = Playbook(**playbook_payload)
     db.add(playbook)
     db.commit()
     db.refresh(playbook)
@@ -120,18 +117,15 @@ async def update_playbook(id: uuid.UUID, playbook_in: PlaybookUpdate, db: Sessio
         )
     
     update_data = playbook_in.model_dump(exclude_unset=True)
-    if "market" in update_data:
-        update_data["market"] = normalize_market_symbol(update_data["market"])
-        update_data["context"] = build_market_context(
-            update_data.get("context", playbook.context),
-            update_data["market"],
+    if any(key in update_data for key in ("symbol", "market", "context")):
+        symbol, market, context = sync_playbook_market_state(
+            symbol=update_data.get("symbol", playbook.symbol),
+            market=update_data.get("market", playbook.market),
+            context=update_data.get("context", playbook.context),
         )
-    elif "context" in update_data and update_data["context"] is not None:
-        update_data["context"] = build_market_context(
-            update_data["context"],
-            normalize_market_symbol(update_data["context"].get("symbol", playbook.market)),
-        )
-        update_data["market"] = update_data["context"]["symbol"]
+        update_data["symbol"] = symbol
+        update_data["market"] = market
+        update_data["context"] = context
     if update_data.get("is_active") is True:
         logger.info(f"[PLAYBOOK] Activating playbook {id}. Auto-deactivating other playbooks for user {playbook.user_id}")
         db.exec(

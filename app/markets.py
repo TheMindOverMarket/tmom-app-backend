@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+DEFAULT_MARKET_SYMBOL = "BTC/USD"
 
 FALLBACK_MARKETS: list[dict[str, str]] = [
     {"symbol": "BTC/USD", "base_asset": "BTC", "quote_asset": "USD", "display_name": "Bitcoin / US Dollar", "provider": "fallback"},
@@ -15,11 +16,11 @@ FALLBACK_MARKETS: list[dict[str, str]] = [
 
 def normalize_market_symbol(value: str | None) -> str:
     if not value:
-        return "BTC/USD"
+        return DEFAULT_MARKET_SYMBOL
 
     normalized = value.strip().upper().replace("-", "/")
     if not normalized:
-        return "BTC/USD"
+        return DEFAULT_MARKET_SYMBOL
 
     if "/" not in normalized:
         normalized = f"{normalized}/USD"
@@ -28,21 +29,39 @@ def normalize_market_symbol(value: str | None) -> str:
     base_asset = base_asset.strip()
     quote_asset = quote_asset.strip() or "USD"
     if not base_asset:
-        base_asset = "BTC"
+        base_asset = DEFAULT_MARKET_SYMBOL.split("/", 1)[0]
 
     return f"{base_asset}/{quote_asset}"
 
 
-def build_market_context(context: dict[str, Any] | None, market: str) -> dict[str, Any]:
+def build_market_context(context: dict[str, Any] | None, symbol: str | None) -> dict[str, Any]:
     synced_context = dict(context or {})
-    synced_context["symbol"] = market
+    synced_context["symbol"] = normalize_market_symbol(symbol or synced_context.get("symbol"))
     return synced_context
 
 
-def resolve_playbook_market(playbook: Any) -> str:
+def sync_playbook_market_state(
+    *,
+    symbol: str | None = None,
+    market: str | None = None,
+    context: dict[str, Any] | None = None,
+) -> tuple[str, str, dict[str, Any]]:
+    canonical_symbol = normalize_market_symbol(symbol or market or (context or {}).get("symbol"))
+    return canonical_symbol, canonical_symbol, build_market_context(context, canonical_symbol)
+
+
+def resolve_playbook_symbol(playbook: Any) -> str:
+    explicit_symbol = getattr(playbook, "symbol", None)
+    if explicit_symbol:
+        return normalize_market_symbol(explicit_symbol)
+
     explicit_market = getattr(playbook, "market", None)
     if explicit_market:
         return normalize_market_symbol(explicit_market)
 
     context = getattr(playbook, "context", None) or {}
     return normalize_market_symbol(context.get("symbol"))
+
+
+def resolve_playbook_market(playbook: Any) -> str:
+    return resolve_playbook_symbol(playbook)

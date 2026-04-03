@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Optional, Dict, List, Any
 from pydantic import BaseModel, model_validator
 from app.models import SessionStatus, SessionEventType, Playbook, User, GenerationStatus
-from app.markets import build_market_context, normalize_market_symbol
+from app.markets import sync_playbook_market_state
 
 # --- Core Event Schemas (Upstream Alpaca/Aggregator) ---
 
@@ -139,6 +139,7 @@ class PlaybookCreate(BaseModel):
     # user_id must now be provided explicitly by the frontend user picker.
     # This is still not real auth and should be replaced by proper identity/session handling later.
     user_id: uuid.UUID
+    symbol: Optional[str] = None
     market: str = "BTC/USD"
     original_nl_input: str
     context: Optional[Dict[str, Any]] = None
@@ -151,6 +152,7 @@ class PlaybookCreate(BaseModel):
             "example": {
                 "name": "Sample BTC Ruleset",
                 "user_id": "00000000-0000-0000-0000-000000000000",
+                "symbol": "BTC/USD",
                 "market": "BTC/USD",
                 "original_nl_input": HARDCODED_PROMPT,
                 "context": {
@@ -182,12 +184,16 @@ class PlaybookCreate(BaseModel):
 
     @model_validator(mode="after")
     def sync_market_context(self) -> "PlaybookCreate":
-        self.market = normalize_market_symbol(self.market)
-        self.context = build_market_context(self.context, self.market)
+        self.symbol, self.market, self.context = sync_playbook_market_state(
+            symbol=self.symbol,
+            market=self.market,
+            context=self.context,
+        )
         return self
 
 class PlaybookUpdate(BaseModel):
     name: Optional[str] = None
+    symbol: Optional[str] = None
     market: Optional[str] = None
     original_nl_input: Optional[str] = None
     context: Optional[Dict[str, Any]] = None
@@ -197,23 +203,28 @@ class PlaybookUpdate(BaseModel):
 
     @model_validator(mode="after")
     def sync_market_context(self) -> "PlaybookUpdate":
-        if self.market is not None:
-            self.market = normalize_market_symbol(self.market)
-            self.context = build_market_context(self.context, self.market)
-        elif self.context and self.context.get("symbol"):
-            self.market = normalize_market_symbol(self.context["symbol"])
-            self.context = build_market_context(self.context, self.market)
+        if self.symbol is not None or self.market is not None or self.context is not None:
+            self.symbol, self.market, self.context = sync_playbook_market_state(
+                symbol=self.symbol,
+                market=self.market,
+                context=self.context,
+            )
         return self
 
 class PlaybookIngest(BaseModel):
     name: str
     user_id: uuid.UUID
+    symbol: Optional[str] = None
     market: str = "BTC/USD"
     original_nl_input: str
 
     @model_validator(mode="after")
     def normalize_market(self) -> "PlaybookIngest":
-        self.market = normalize_market_symbol(self.market)
+        self.symbol, self.market, _ = sync_playbook_market_state(
+            symbol=self.symbol,
+            market=self.market,
+            context=None,
+        )
         return self
 
 

@@ -11,7 +11,7 @@ from app.database import engine
 from app.models import Playbook, Session as SessionModel, SessionStatus
 from app.routers.market_data import get_market_history
 from app.sessions import clear_active_sessions, set_active_session
-from app.markets import normalize_market_symbol
+from app.markets import normalize_market_symbol, resolve_playbook_symbol
 
 logger = logging.getLogger(__name__)
 
@@ -91,7 +91,7 @@ async def sync_runtime_from_database() -> dict[str, Any]:
                 continue
 
             restored_sessions += 1
-            context = playbook.context or {"symbol": playbook.market}
+            context = playbook.context or {"symbol": resolve_playbook_symbol(playbook)}
             alpaca_symbol = get_alpaca_symbol(context)
             set_active_session(playbook.id, db_session.id, db_session.user_id, alpaca_symbol)
             active_symbols.add(alpaca_symbol)

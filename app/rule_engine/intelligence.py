@@ -5,7 +5,7 @@ import uuid
 from sqlmodel import Session, select
 from app.database import engine
 from app.models import Playbook, GenerationStatus, Rule, Condition
-from app.markets import resolve_playbook_market
+from app.markets import resolve_playbook_symbol
 
 import httpx
 from app.config import settings
@@ -41,13 +41,14 @@ async def analyze_playbook_execution(playbook_id: uuid.UUID):
             logger.error(f"[INTELLIGENCE][FAILED] Playbook {playbook_id} not found.")
             return
         user_id = playbook.user_id
-        market = resolve_playbook_market(playbook)
+        symbol = resolve_playbook_symbol(playbook)
 
     # 2. Call External Rule Engine (Updated Spec: POST /api/rules/compile)
     trigger_url = f"{settings.rule_engine_base_url}/api/rules/compile"
     params = {
         "playbook_id": str(playbook_id),
-        "market": market,
+        "symbol": symbol,
+        "market": symbol,
     }
     
     last_error: Exception | None = None
@@ -122,14 +123,15 @@ async def trigger_session_execution(playbook_id: uuid.UUID, session_id: uuid.UUI
     """
     with Session(engine) as db:
         playbook = db.get(Playbook, playbook_id)
-        market = resolve_playbook_market(playbook) if playbook else "BTC/USD"
+        symbol = resolve_playbook_symbol(playbook) if playbook else "BTC/USD"
 
     trigger_url = f"{settings.rule_engine_base_url}/api/rules/execute"
     params = {
         "playbook_id": str(playbook_id),
         "session_id": str(session_id),
         "user_id": str(user_id),
-        "market": market,
+        "symbol": symbol,
+        "market": symbol,
     }
     
     try:
@@ -148,10 +150,10 @@ async def trigger_session_stop(playbook_id: uuid.UUID):
     """
     with Session(engine) as db:
         playbook = db.get(Playbook, playbook_id)
-        market = resolve_playbook_market(playbook) if playbook else "BTC/USD"
+        symbol = resolve_playbook_symbol(playbook) if playbook else "BTC/USD"
 
     stop_url = f"{settings.rule_engine_base_url}/api/rules/stop"
-    params = {"playbook_id": str(playbook_id), "market": market}
+    params = {"playbook_id": str(playbook_id), "symbol": symbol, "market": symbol}
     
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
