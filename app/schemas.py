@@ -134,7 +134,10 @@ Cooldown:
 
 class PlaybookCreate(BaseModel):
     name: str
-    user_id: uuid.UUID = uuid.UUID("1d4d88c7-bcd1-4813-8f34-59c9776e5b3f")
+    # Temporary/dirty implementation note:
+    # user_id must now be provided explicitly by the frontend user picker.
+    # This is still not real auth and should be replaced by proper identity/session handling later.
+    user_id: uuid.UUID
     original_nl_input: str
     context: Optional[Dict[str, Any]] = None
     is_active: bool = True
@@ -145,7 +148,7 @@ class PlaybookCreate(BaseModel):
         "json_schema_extra": {
             "example": {
                 "name": "Sample BTC Ruleset",
-                "user_id": "1d4d88c7-bcd1-4813-8f34-59c9776e5b3f",
+                "user_id": "00000000-0000-0000-0000-000000000000",
                 "original_nl_input": HARDCODED_PROMPT,
                 "context": {
                     "description": "Auto-generated sample playbook from utility endpoint",
@@ -184,11 +187,11 @@ class PlaybookUpdate(BaseModel):
 
 class PlaybookIngest(BaseModel):
     name: str
-    user_id: uuid.UUID = uuid.UUID("1d4d88c7-bcd1-4813-8f34-59c9776e5b3f")
+    user_id: uuid.UUID
     original_nl_input: str
 
 class StartStreamsRequest(BaseModel):
-    user_id: uuid.UUID = uuid.UUID("1d4d88c7-bcd1-4813-8f34-59c9776e5b3f")
+    user_id: uuid.UUID
     playbook_id: uuid.UUID
 
 class StartStreamsResponse(BaseModel):
