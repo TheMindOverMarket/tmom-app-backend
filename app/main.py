@@ -1,3 +1,5 @@
+import asyncio
+
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, Depends, status
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -30,11 +32,28 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 from contextlib import asynccontextmanager
+
+
+async def _run_startup_migrations(app: FastAPI) -> None:
+    try:
+        app.state.schema_status = "migrating"
+        app.state.schema_error = None
+        await asyncio.to_thread(run_db_migrations)
+        app.state.schema_status = "ready"
+        logger.info("[STARTUP] Database migrations completed successfully.")
+    except Exception as exc:
+        app.state.schema_status = "failed"
+        app.state.schema_error = str(exc)
+        logger.exception("[STARTUP] Database migrations failed.")
+
+
 @asynccontextmanager
 async def app_lifespan(app: FastAPI):
+    app.state.schema_status = "ready"
+    app.state.schema_error = None
     if settings.run_db_migrations_on_startup:
-        logger.info("[STARTUP] Running database migrations before startup.")
-        run_db_migrations()
+        logger.info("[STARTUP] Scheduling database migrations during startup.")
+        asyncio.create_task(_run_startup_migrations(app))
     await on_startup()
     yield
     await on_shutdown()
@@ -54,6 +73,32 @@ app.add_middleware(
     allow_methods=["GET", "POST", "OPTIONS", "PUT", "DELETE", "PATCH"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def require_ready_schema(request: Request, call_next):
+    schema_status = getattr(request.app.state, "schema_status", "ready")
+    if request.url.path != "/health" and schema_status == "migrating":
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={
+                "detail": "Database migrations are still running. Please retry in a few moments.",
+                "migration_status": schema_status,
+            },
+        )
+
+    if request.url.path != "/health" and schema_status == "failed":
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={
+                "detail": "Database migrations failed during startup.",
+                "migration_status": schema_status,
+                "migration_error": getattr(request.app.state, "schema_error", None),
+            },
+        )
+
+    return await call_next(request)
+
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
@@ -149,6 +194,8 @@ async def execute_mock_trade(trade_req: TradeTriggerRequest):
 async def health(db = Depends(get_session)) -> dict:
     from sqlmodel import text
     from app.lifecycle import get_runtime_status
+    schema_status = getattr(app.state, "schema_status", "ready")
+    schema_error = getattr(app.state, "schema_error", None)
     try:
         # Simple query to test DB connectivity
         db.execute(text("SELECT 1"))
@@ -158,9 +205,13 @@ async def health(db = Depends(get_session)) -> dict:
         db_status = "unavailable"
 
     return {
-        "status": "ok" if db_status == "connected" else "degraded",
+        "status": "ok" if db_status == "connected" and schema_status == "ready" else "degraded",
         "environment": settings.environment,
         "database": db_status,
+        "schema": {
+            "status": schema_status,
+            "error": schema_error,
+        },
         "runtime": get_runtime_status(),
     }
 
