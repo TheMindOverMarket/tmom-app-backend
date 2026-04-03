@@ -34,6 +34,13 @@ def upgrade() -> None:
             END
             """
         )
+        op.execute(
+            """
+            UPDATE playbooks
+            SET symbol = symbol || '/USD'
+            WHERE strpos(symbol, '/') = 0
+            """
+        )
     else:
         op.execute(
             """
@@ -48,14 +55,13 @@ def upgrade() -> None:
             END
             """
         )
-
-    op.execute(
-        """
-        UPDATE playbooks
-        SET symbol = symbol || '/USD'
-        WHERE instr(symbol, '/') = 0
-        """
-    )
+        op.execute(
+            """
+            UPDATE playbooks
+            SET symbol = symbol || '/USD'
+            WHERE instr(symbol, '/') = 0
+            """
+        )
 
     with op.batch_alter_table("playbooks", schema=None) as batch_op:
         batch_op.alter_column("symbol", existing_type=sa.String(), nullable=False)
