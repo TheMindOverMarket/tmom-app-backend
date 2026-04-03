@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     
     # Database
     database_url: str = ""
+    run_db_migrations_on_startup: bool = True
 
     # External Services
     rule_engine_base_url: str = "https://rule-engine-rcg9.onrender.com"

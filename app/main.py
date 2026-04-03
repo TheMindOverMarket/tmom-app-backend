@@ -3,7 +3,7 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 import logging
 from app.config import settings
-from app.database import get_session
+from app.database import get_session, run_db_migrations
 from app.lifecycle import on_startup, on_shutdown
 from app.broadcast import MarketStateBroadcaster
 from app.routers import (
@@ -32,6 +32,9 @@ logger = logging.getLogger(__name__)
 from contextlib import asynccontextmanager
 @asynccontextmanager
 async def app_lifespan(app: FastAPI):
+    if settings.run_db_migrations_on_startup:
+        logger.info("[STARTUP] Running database migrations before startup.")
+        run_db_migrations()
     await on_startup()
     yield
     await on_shutdown()
