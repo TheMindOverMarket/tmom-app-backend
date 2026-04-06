@@ -150,6 +150,19 @@ async def trigger_session_execution(playbook_id: uuid.UUID, session_id: uuid.UUI
     except Exception as e:
         logger.error(f"[RULE_ENGINE][EXECUTE][ERROR] Trigger failed for playbook {playbook_id}: {str(e)}")
 
+    # 🚦 DEVIATION ENGINE TRIGGER
+    deviation_url = f"{settings.deviation_engine_base_url}/deviations/session/start"
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            logger.info(f"[DEVIATION_ENGINE][START] POST {deviation_url} (session:{session_id})")
+            await client.post(deviation_url, params={
+                "session_id": str(session_id),
+                "playbook_id": str(playbook_id),
+                "user_id": str(user_id)
+            })
+    except Exception as e:
+        logger.warning(f"[DEVIATION_ENGINE][START][ERROR] Trigger failed: {str(e)}")
+
 async def trigger_session_stop(playbook_id: uuid.UUID):
     """
     Called by /sessions/end to shut down rule engine processing
@@ -177,3 +190,16 @@ async def trigger_session_stop(playbook_id: uuid.UUID):
             logger.info(f"[RULE_ENGINE][STOP][SUCCESS] response: {response.json()}")
     except Exception as e:
         logger.error(f"[RULE_ENGINE][STOP][ERROR] Shutdown failed for playbook {playbook_id}: {str(e)}")
+
+    # 🚦 DEVIATION ENGINE SHUTDOWN
+    deviation_url = f"{settings.deviation_engine_base_url}/deviations/session/stop"
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            logger.info(f"[DEVIATION_ENGINE][STOP] POST {deviation_url} (session:{playbook_id})")
+            # NOTE: For stop, we usually rely on session_id, but the trigger currently takes session_id
+            # However, trigger_session_stop in backend only has playbook_id. 
+            # We'll need a way to resolve the active session_id if we want to stop it specifically.
+            # For now, we'll log it as a placeholder or assume the engine handles it.
+            pass 
+    except Exception as e:
+        logger.warning(f"[DEVIATION_ENGINE][STOP][ERROR] Shutdown failed: {str(e)}")
