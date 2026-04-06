@@ -58,7 +58,7 @@ def upgrade() -> None:
             UPDATE playbooks
             SET context = jsonb_set(
                 jsonb_set(
-                    COALESCE(context, '{}'::jsonb),
+                    COALESCE(context::jsonb, '{}'::jsonb),
                     '{symbol}',
                     to_jsonb(symbol),
                     true
@@ -66,7 +66,7 @@ def upgrade() -> None:
                 '{market}',
                 to_jsonb(market),
                 true
-            )
+            )::json
             WHERE
                 symbol IS NOT NULL
                 AND market IS NOT NULL
