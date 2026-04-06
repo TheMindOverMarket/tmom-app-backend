@@ -129,7 +129,7 @@ app.include_router(condition_edges.router)
 app.include_router(market_data.router)
 app.include_router(utility.router)
 app.include_router(sessions.router)
-app.include_router(admin.router, prefix="/api/admin")
+app.include_router(admin.router, prefix="/admin")
 
 @app.get("/")
 def root():
