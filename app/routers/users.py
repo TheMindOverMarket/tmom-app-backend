@@ -8,7 +8,8 @@ import bcrypt
 from app.database import get_session
 from app.models import (
     User, Playbook, Rule, Condition, ConditionEdge, 
-    Session as SessionModel, SessionEvent as SessionEventModel
+    Session as SessionModel, SessionEvent as SessionEventModel,
+    UserRole
 )
 from app.schemas import UserCreate, UserUpdate, UserLogin
 from app.config import settings
@@ -49,8 +50,6 @@ async def create_user(user_in: UserCreate, db: Session = Depends(get_session)):
     db.commit()
     db.refresh(user)
     logger.info(f"[USER] New user created: {user.email} (ID: {user.id})")
-    return user
-
     return user
 
 @router.post("/users/login", response_model=User)
