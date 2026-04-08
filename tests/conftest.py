@@ -12,6 +12,7 @@ os.environ["ALPACA_API_SECRET"] = "fake_secret"
 os.environ["DATABASE_URL"] = "sqlite://"
 
 from app.main import app
+from app.config import settings
 from app.database import get_session
 from app.models import User
 
@@ -35,13 +36,20 @@ def client_fixture(db_session: Session):
         return db_session
     
     app.dependency_overrides[get_session] = get_session_override
+    previous_run_db_migrations = settings.run_db_migrations_on_startup
+    settings.run_db_migrations_on_startup = False
+    app.state.schema_status = "ready"
+    app.state.schema_error = None
     
     # Mock lifecycle to avoid real WebSockets/background tasks
     with patch("app.main.on_startup", new_callable=AsyncMock), \
          patch("app.main.on_shutdown", new_callable=AsyncMock):
         with TestClient(app) as client:
+            client.app.state.schema_status = "ready"
+            client.app.state.schema_error = None
             yield client
             
+    settings.run_db_migrations_on_startup = previous_run_db_migrations
     app.dependency_overrides.clear()
 
 @pytest.fixture(name="test_user")

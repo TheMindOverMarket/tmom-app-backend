@@ -92,6 +92,85 @@ class AdminUserAnalytics(BaseModel):
     session_status: Optional[SessionStatus] = None
     last_updated: Optional[datetime] = None
 
+
+class AdminAnalyticsOverview(BaseModel):
+    total_traders: int
+    active_sessions: int
+    completed_sessions: int
+    adherence_rate: float
+    total_deviation_cost: float
+    total_unauthorized_gain: float
+    total_deviation_events: int
+    at_risk_traders: int
+
+
+class AdminTrendPoint(BaseModel):
+    bucket: str
+    sessions: int
+    adherence_rate: float
+    deviation_cost: float
+    deviation_events: int
+
+
+class AdminTraderRow(BaseModel):
+    user_id: uuid.UUID
+    email: str
+    latest_session_id: Optional[uuid.UUID] = None
+    latest_session_status: Optional[SessionStatus] = None
+    sessions_count: int
+    adherence_rate: float
+    total_deviation_cost: float
+    total_unauthorized_gain: float
+    total_deviation_events: int
+    severe_deviation_events: int
+    top_deviation_family: Optional[str] = None
+    top_deviation_type: Optional[str] = None
+    last_active_at: Optional[datetime] = None
+    risk_rank_score: float
+    risk_rank_label: str
+    drift_delta_7d: float = 0.0
+
+
+class AdminDeviationBreakdown(BaseModel):
+    by_family: Dict[str, int]
+    by_type: Dict[str, int]
+    by_severity: Dict[str, int]
+    cost_by_family: Dict[str, float]
+    cost_by_type: Dict[str, float]
+
+
+class AdminPlaybookRow(BaseModel):
+    playbook_id: uuid.UUID
+    playbook_name: str
+    trader_count: int
+    sessions_count: int
+    adherence_rate: float
+    total_deviation_cost: float
+    total_deviation_events: int
+    most_broken_rule: Optional[str] = None
+
+
+class AdminInterventionRow(BaseModel):
+    user_id: uuid.UUID
+    email: str
+    latest_session_id: Optional[uuid.UUID] = None
+    priority_score: float
+    priority_label: str
+    drivers: List[str]
+    total_deviation_cost: float
+    recent_deviation_velocity: float
+    repeated_rule_breaks: int
+    severe_events: int
+
+
+class AdminAnalyticsDashboard(BaseModel):
+    overview: AdminAnalyticsOverview
+    trends: List[AdminTrendPoint]
+    traders: List[AdminTraderRow]
+    deviations: AdminDeviationBreakdown
+    playbooks: List[AdminPlaybookRow]
+    interventions: List[AdminInterventionRow]
+
 # --- Playbook Schemas ---
 
 HARDCODED_PROMPT = """
