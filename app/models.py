@@ -44,6 +44,9 @@ class User(SQLModel, table=True):
         index=True,
         nullable=False
     )
+    first_name: Optional[str] = Field(default=None)
+    last_name: Optional[str] = Field(default=None)
+    hashed_password: Optional[str] = Field(default=None)
     role: UserRole = Field(
         sa_column=Column(
             SAEnum(UserRole, name="user_role_enum"),

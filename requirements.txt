@@ -15,3 +15,5 @@ numpy
 pytest
 pytest-asyncio
 pytest-mock
+passlib[bcrypt]
+PyJWT

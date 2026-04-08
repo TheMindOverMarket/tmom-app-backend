@@ -1,17 +1,32 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request, Response
 from sqlmodel import Session, select
 from typing import List
 import uuid
 import logging
+import jwt
+from passlib.context import CryptContext
 from app.database import get_session
 from app.models import (
     User, Playbook, Rule, Condition, ConditionEdge, 
     Session as SessionModel, SessionEvent as SessionEventModel
 )
 from app.schemas import UserCreate, UserUpdate, UserLogin
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["users"])
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+def verify_password(plain_password, hashed_password):
+    if not hashed_password: return False
+    return pwd_context.verify(plain_password, hashed_password)
+
+def get_password_hash(password):
+    return pwd_context.hash(password)
+
+def create_access_token(data: dict):
+    return jwt.encode(data, settings.jwt_secret, algorithm="HS256")
 
 @router.post("/users/", response_model=User, status_code=status.HTTP_201_CREATED)
 async def create_user(user_in: UserCreate, db: Session = Depends(get_session)):
@@ -24,23 +39,53 @@ async def create_user(user_in: UserCreate, db: Session = Depends(get_session)):
             detail="A user with this email address already exists. Please use a unique email."
         )
     
-    user = User(**user_in.dict())
+    user_data = user_in.dict(exclude={"password"})
+    hashed_password = get_password_hash(user_in.password)
+    user = User(**user_data, hashed_password=hashed_password)
     db.add(user)
     db.commit()
     db.refresh(user)
     logger.info(f"[USER] New user created: {user.email} (ID: {user.id})")
     return user
 
+    return user
+
 @router.post("/users/login", response_model=User)
-async def login_user(login_data: UserLogin, db: Session = Depends(get_session)):
+async def login_user(login_data: UserLogin, response: Response, db: Session = Depends(get_session)):
     user = db.exec(select(User).where(User.email == login_data.email)).first()
-    if not user:
-        logger.warning(f"[USER] Login failed: Email {login_data.email} not found")
+    if not user or not verify_password(login_data.password, user.hashed_password):
+        logger.warning(f"[USER] Login failed: Invalid credentials for {login_data.email}")
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, 
-            detail="A user with this email address was not found."
+            status_code=status.HTTP_401_UNAUTHORIZED, 
+            detail="Invalid email or password."
         )
+    
+    token = create_access_token({"sub": str(user.id)})
+    response.set_cookie(key="access_token", value=token, httponly=True, samesite="lax", max_age=86400 * 7)
     logger.info(f"[USER] User logged in: {user.email}")
+    return user
+
+@router.post("/users/logout")
+async def logout_user(response: Response):
+    response.delete_cookie(key="access_token")
+    return {"status": "Logged out"}
+
+@router.get("/users/me", response_model=User)
+async def get_current_user(request: Request, db: Session = Depends(get_session)):
+    token = request.cookies.get("access_token")
+    if not token:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+    try:
+        payload = jwt.decode(token, settings.jwt_secret, algorithms=["HS256"])
+        user_id = payload.get("sub")
+        if user_id is None:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+    except jwt.PyJWTError:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+    
+    user = db.get(User, uuid.UUID(user_id))
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
     return user
 
 @router.get("/users/", response_model=List[User])

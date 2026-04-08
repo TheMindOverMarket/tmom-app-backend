@@ -15,6 +15,9 @@ class Settings(BaseSettings):
     # External Services
     rule_engine_base_url: str = "https://rule-engine-rcg9.onrender.com"
     deviation_engine_base_url: str = "http://localhost:8100"
+    
+    # Auth
+    jwt_secret: str = "local-secret-key-change-in-prod"
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

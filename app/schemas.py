@@ -59,10 +59,14 @@ class UserActivityEvent(BaseModel):
 
 class UserCreate(BaseModel):
     email: str
+    password: str
+    first_name: str
+    last_name: str
     role: Optional[UserRole] = UserRole.STANDARD
 
 class UserLogin(BaseModel):
     email: str
+    password: str
 
 class UserUpdate(BaseModel):
     email: Optional[str] = None
@@ -71,6 +75,8 @@ class UserUpdate(BaseModel):
 class UserRead(BaseModel):
     id: uuid.UUID
     email: str
+    first_name: str
+    last_name: str
     role: UserRole
     created_at: datetime
     updated_at: datetime
