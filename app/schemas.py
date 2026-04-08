@@ -88,7 +88,7 @@ class AdminUserAnalytics(BaseModel):
     user_id: uuid.UUID
     email: str
     latest_session_id: Optional[uuid.UUID] = None
-    latest_deviation_score: int = 0
+    latest_deviation_score: float = 0.0
     session_status: Optional[SessionStatus] = None
     last_updated: Optional[datetime] = None
 
