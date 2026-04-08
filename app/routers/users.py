@@ -4,7 +4,7 @@ from typing import List
 import uuid
 import logging
 import jwt
-from passlib.context import CryptContext
+import bcrypt
 from app.database import get_session
 from app.models import (
     User, Playbook, Rule, Condition, ConditionEdge, 
@@ -16,14 +16,16 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["users"])
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-def verify_password(plain_password, hashed_password):
+def verify_password(plain_password: str, hashed_password: str) -> bool:
     if not hashed_password: return False
-    return pwd_context.verify(plain_password, hashed_password)
+    try:
+        return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
+    except Exception:
+        return False
 
-def get_password_hash(password):
-    return pwd_context.hash(password)
+def get_password_hash(password: str) -> str:
+    salt = bcrypt.gensalt()
+    return bcrypt.hashpw(password.encode('utf-8'), salt).decode('utf-8')
 
 def create_access_token(data: dict):
     return jwt.encode(data, settings.jwt_secret, algorithm="HS256")
@@ -39,7 +41,8 @@ async def create_user(user_in: UserCreate, db: Session = Depends(get_session)):
             detail="A user with this email address already exists. Please use a unique email."
         )
     
-    user_data = user_in.dict(exclude={"password"})
+    # Safely extract dict depending on pydantic version, excluding password
+    user_data = {k: v for k, v in dict(user_in).items() if k != "password"}
     hashed_password = get_password_hash(user_in.password)
     user = User(**user_data, hashed_password=hashed_password)
     db.add(user)
