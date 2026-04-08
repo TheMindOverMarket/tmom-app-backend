@@ -8,7 +8,7 @@ from app.models import (
     User, Playbook, Rule, Condition, ConditionEdge, 
     Session as SessionModel, SessionEvent as SessionEventModel
 )
-from app.schemas import UserCreate, UserUpdate
+from app.schemas import UserCreate, UserUpdate, UserLogin
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["users"])
@@ -29,6 +29,18 @@ async def create_user(user_in: UserCreate, db: Session = Depends(get_session)):
     db.commit()
     db.refresh(user)
     logger.info(f"[USER] New user created: {user.email} (ID: {user.id})")
+    return user
+
+@router.post("/users/login", response_model=User)
+async def login_user(login_data: UserLogin, db: Session = Depends(get_session)):
+    user = db.exec(select(User).where(User.email == login_data.email)).first()
+    if not user:
+        logger.warning(f"[USER] Login failed: Email {login_data.email} not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, 
+            detail="A user with this email address was not found."
+        )
+    logger.info(f"[USER] User logged in: {user.email}")
     return user
 
 @router.get("/users/", response_model=List[User])

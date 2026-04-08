@@ -61,6 +61,9 @@ class UserCreate(BaseModel):
     email: str
     role: Optional[UserRole] = UserRole.STANDARD
 
+class UserLogin(BaseModel):
+    email: str
+
 class UserUpdate(BaseModel):
     email: Optional[str] = None
     role: Optional[UserRole] = None
