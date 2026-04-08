@@ -91,12 +91,20 @@ async def get_current_user(request: Request, db: Session = Depends(get_session))
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
     return user
 
+async def get_current_manager(user: User = Depends(get_current_user)) -> User:
+    if user.role != UserRole.MANAGER:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, 
+            detail="Forbidden: Manager access required."
+        )
+    return user
+
 @router.get("/users/", response_model=List[User])
-async def list_users(db: Session = Depends(get_session)):
+async def list_users(db: Session = Depends(get_session), admin: User = Depends(get_current_manager)):
     return db.exec(select(User)).all()
 
 @router.get("/users/{id}", response_model=User)
-async def get_user(id: uuid.UUID, db: Session = Depends(get_session)):
+async def get_user(id: uuid.UUID, db: Session = Depends(get_session), admin: User = Depends(get_current_manager)):
     user = db.get(User, id)
     if not user:
         logger.warning(f"[USER] Fetch failed: User {id} not found")
@@ -127,7 +135,7 @@ async def update_user(id: uuid.UUID, user_in: UserUpdate, db: Session = Depends(
     return user
 
 @router.delete("/users/{id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_user(id: uuid.UUID, db: Session = Depends(get_session)):
+async def delete_user(id: uuid.UUID, db: Session = Depends(get_session), admin: User = Depends(get_current_manager)):
     """
     Cascading Delete Invariant:
     User -> Playbooks -> [Sessions, Rules] -> [Events, Conditions, Edges]

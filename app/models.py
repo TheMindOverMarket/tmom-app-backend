@@ -27,8 +27,8 @@ class SessionEventType(str, Enum):
     SYSTEM = "SYSTEM"
 
 class UserRole(str, Enum):
-    STANDARD = "STANDARD"
-    ADMIN = "ADMIN"
+    TRADER = "TRADER"
+    MANAGER = "MANAGER"
 
 class User(SQLModel, table=True):
     __tablename__ = "users"
@@ -50,7 +50,7 @@ class User(SQLModel, table=True):
     role: UserRole = Field(
         sa_column=Column(
             SAEnum(UserRole, name="user_role_enum"),
-            server_default=UserRole.STANDARD.value,
+            server_default=UserRole.TRADER.value,
             nullable=False
         )
     )

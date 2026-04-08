@@ -62,7 +62,7 @@ class UserCreate(BaseModel):
     password: str
     first_name: str
     last_name: str
-    role: Optional[UserRole] = UserRole.STANDARD
+    role: Optional[UserRole] = UserRole.TRADER
 
 class UserLogin(BaseModel):
     email: str

@@ -7,11 +7,13 @@ from app.database import get_session
 from app.models import User, Session as SessionModel, SessionEvent as SessionEventModel, UserRole
 from app.schemas import AdminUserAnalytics
 
+from app.routers.users import get_current_manager
+
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["admin"])
 
 @router.get("/analytics", response_model=List[AdminUserAnalytics])
-async def get_admin_analytics(db: Session = Depends(get_session)):
+async def get_admin_analytics(db: Session = Depends(get_session), admin: User = Depends(get_current_manager)):
     """
     Fetch session analytics for all users.
     Returns the latest session and its final deviation score for each user.
