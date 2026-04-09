@@ -1,11 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
+from fastapi.responses import StreamingResponse
 from sqlmodel import Session, select
 from sqlalchemy import update as sa_update
 from sqlalchemy.orm.attributes import flag_modified
 from typing import List, Optional, Any
 import uuid
 import logging
+import httpx
 from app.database import get_session
+from app.config import settings
 from app.models import (
     Playbook, User, Rule, Condition, ConditionEdge, 
     Session as SessionModel, SessionEvent as SessionEventModel,
@@ -143,6 +146,22 @@ async def chat_playbook(
     background_tasks.add_task(analyze_playbook_execution, playbook.id)
     logger.info(f"[PLAYBOOK][CHAT] ID: {playbook.id} - Extraction Re-Triggered")
     return _hydrate_playbook_market_fields(playbook)
+
+@router.get("/playbooks/{id}/stream")
+async def stream_playbook(id: uuid.UUID):
+    """
+    SSE Proxy: Streams the AI response from the Rule Engine.
+    """
+    # Note: We use the Rule Engine's streaming endpoint
+    target_url = f"{settings.rule_engine_base_url}/api/rules/stream?playbook_id={id}"
+    
+    async def event_generator():
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            async with client.stream("GET", target_url) as response:
+                async for chunk in response.aiter_bytes():
+                    yield chunk
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 @router.get("/playbooks/", response_model=List[Playbook])
 async def list_playbooks(user_id: Optional[uuid.UUID] = None, db: Session = Depends(get_session)):
