@@ -251,6 +251,7 @@ class PlaybookCreate(BaseModel):
     market: str
     original_nl_input: str
     context: Optional[Dict[str, Any]] = None
+    chat_history: Optional[List[Dict[str, Any]]] = None
     is_active: bool = True
     generation_status: GenerationStatus = GenerationStatus.COMPLETED
     failure_reason: Optional[str] = None
@@ -305,6 +306,7 @@ class PlaybookUpdate(BaseModel):
     market: Optional[str] = None
     original_nl_input: Optional[str] = None
     context: Optional[Dict[str, Any]] = None
+    chat_history: Optional[List[Dict[str, Any]]] = None
     is_active: Optional[bool] = None
     generation_status: Optional[GenerationStatus] = None
     failure_reason: Optional[str] = None
@@ -334,6 +336,9 @@ class PlaybookIngest(BaseModel):
             context=None,
         )
         return self
+
+class PlaybookChatTurn(BaseModel):
+    message: str
 
 
 class MarketOption(BaseModel):

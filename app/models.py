@@ -1,6 +1,6 @@
 from sqlmodel import SQLModel, Field, Column, DateTime, JSON, Text, text
 from datetime import datetime, timezone
-from typing import Optional, Any, Dict
+from typing import Optional, Any, Dict, List
 import uuid
 from sqlalchemy import func, Enum as SAEnum
 from enum import Enum
@@ -16,6 +16,7 @@ class SessionStatus(str, Enum):
 
 class GenerationStatus(str, Enum):
     PENDING = "PENDING"
+    INCOMPLETE = "INCOMPLETE"
     COMPLETED = "COMPLETED"
     FAILED = "FAILED"
 
@@ -98,6 +99,10 @@ class Playbook(SQLModel, table=True):
     )
     context: Optional[Dict[str, Any]] = Field(
         default=None, 
+        sa_column=Column(JSON)
+    )
+    chat_history: Optional[List[Dict[str, Any]]] = Field(
+        default=None,
         sa_column=Column(JSON)
     )
     is_active: bool = Field(default=True, nullable=False)

@@ -10,7 +10,7 @@ from app.models import (
     Session as SessionModel, SessionEvent as SessionEventModel,
     SessionEventType, GenerationStatus
 )
-from app.schemas import PlaybookCreate, PlaybookUpdate, PlaybookIngest
+from app.schemas import PlaybookCreate, PlaybookUpdate, PlaybookIngest, PlaybookChatTurn
 from app.rule_engine.intelligence import analyze_playbook_execution
 from app.markets import sync_playbook_market_state
 
@@ -97,6 +97,9 @@ async def ingest_playbook(
         "symbol": playbook_payload["symbol"],
         "market": playbook_payload["market"],
     }
+    playbook_payload["chat_history"] = [
+        {"role": "user", "content": playbook_in.original_nl_input}
+    ]
     playbook_payload["is_active"] = True
     playbook_payload["generation_status"] = GenerationStatus.PENDING
     playbook = Playbook(**playbook_payload)
@@ -107,6 +110,37 @@ async def ingest_playbook(
     background_tasks.add_task(analyze_playbook_execution, playbook.id)
     logger.info(f"[PLAYBOOK][INGESTED] ID: {playbook.id} - Extraction Triggered")
     return playbook
+
+@router.post("/playbooks/{id}/chat", response_model=Playbook)
+async def chat_playbook(
+    id: uuid.UUID,
+    turn: PlaybookChatTurn,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_session)
+):
+    """
+    Continues an incomplete playbook evaluation by appending a user response to the chat history.
+    """
+    playbook = db.get(Playbook, id)
+    if not playbook:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, 
+            detail=f"Playbook with ID {id} was not found."
+        )
+
+    history = playbook.chat_history or []
+    history.append({"role": "user", "content": turn.message})
+    
+    playbook.chat_history = list(history)
+    playbook.generation_status = GenerationStatus.PENDING
+    
+    db.add(playbook)
+    db.commit()
+    db.refresh(playbook)
+    
+    background_tasks.add_task(analyze_playbook_execution, playbook.id)
+    logger.info(f"[PLAYBOOK][CHAT] ID: {playbook.id} - Extraction Re-Triggered")
+    return _hydrate_playbook_market_fields(playbook)
 
 @router.get("/playbooks/", response_model=List[Playbook])
 async def list_playbooks(user_id: Optional[uuid.UUID] = None, db: Session = Depends(get_session)):
