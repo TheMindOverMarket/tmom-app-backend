@@ -5,7 +5,7 @@ import uuid
 import logging
 from app.database import get_session
 from app.models import Rule, Playbook, Condition, ConditionEdge
-from app.schemas import RuleCreate, RuleUpdate
+from app.schemas import RuleCreate, RuleUpdate, RuleWithLogic
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["rules"])
@@ -101,12 +101,30 @@ async def delete_rule(id: uuid.UUID, db: Session = Depends(get_session)):
     logger.info(f"[RULE][DELETE] Rule {id} and all logical components permanently removed.")
     return None
 
-@router.get("/playbooks/{playbook_id}/rules", response_model=List[Rule])
+@router.get("/playbooks/{playbook_id}/rules", response_model=List[RuleWithLogic])
 async def list_playbook_rules(playbook_id: uuid.UUID, db: Session = Depends(get_session)):
     # Validate playbook existence
     playbook = db.get(Playbook, playbook_id)
     if not playbook:
         raise HTTPException(status_code=404, detail="Playbook not found")
         
-    statement = select(Rule).where(Rule.playbook_id == playbook_id)
-    return db.exec(statement).all()
+    rules = db.exec(select(Rule).where(Rule.playbook_id == playbook_id)).all()
+    
+    rules_with_logic = []
+    for rule in rules:
+        conditions = db.exec(select(Condition).where(Condition.rule_id == rule.id)).all()
+        edges = db.exec(select(ConditionEdge).where(ConditionEdge.rule_id == rule.id)).all()
+        
+        rule_logic = RuleWithLogic(
+            id=rule.id,
+            playbook_id=rule.playbook_id,
+            name=rule.name,
+            description=rule.description,
+            category=rule.category,
+            is_active=rule.is_active,
+            conditions=conditions,
+            condition_edges=edges
+        )
+        rules_with_logic.append(rule_logic)
+        
+    return rules_with_logic

@@ -398,6 +398,40 @@ class ConditionEdgeCreate(BaseModel):
 class ConditionEdgeUpdate(BaseModel):
     logical_operator: Optional[str] = None
 
+class ConditionRead(BaseModel):
+    id: uuid.UUID
+    rule_id: uuid.UUID
+    metric: str
+    comparator: str
+    value: str
+    is_active: bool
+    
+    class Config:
+        from_attributes = True
+
+class ConditionEdgeRead(BaseModel):
+    id: uuid.UUID
+    rule_id: uuid.UUID
+    parent_condition_id: uuid.UUID
+    child_condition_id: uuid.UUID
+    logical_operator: str
+    
+    class Config:
+        from_attributes = True
+
+class RuleWithLogic(BaseModel):
+    id: uuid.UUID
+    playbook_id: uuid.UUID
+    name: str
+    description: Optional[str] = None
+    category: Optional[str] = "logic"
+    is_active: bool
+    conditions: List[ConditionRead] = []
+    condition_edges: List[ConditionEdgeRead] = []
+
+    class Config:
+        from_attributes = True
+
 # --- Market Data & State Schemas ---
 
 class MarketBar(BaseModel):
