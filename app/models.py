@@ -2,7 +2,7 @@ from sqlmodel import SQLModel, Field, Column, DateTime, JSON, Text, text
 from datetime import datetime, timezone
 from typing import Optional, Any, Dict, List
 import uuid
-from sqlalchemy import func, Enum as SAEnum
+from sqlalchemy import func, Enum as SAEnum, ForeignKey
 from enum import Enum
 
 class LogicalOperator(str, Enum):
@@ -83,9 +83,7 @@ class Playbook(SQLModel, table=True):
         nullable=False
     )
     user_id: uuid.UUID = Field(
-        foreign_key="users.id",
-        index=True,
-        nullable=False
+        sa_column=Column(ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
     )
     name: str = Field(nullable=False)
     # Temporary compatibility:
@@ -145,9 +143,7 @@ class Rule(SQLModel, table=True):
         nullable=False
     )
     playbook_id: uuid.UUID = Field(
-        foreign_key="playbooks.id",
-        index=True,
-        nullable=False
+        sa_column=Column(ForeignKey("playbooks.id", ondelete="CASCADE"), index=True, nullable=False)
     )
     name: str = Field(nullable=False)
     description: Optional[str] = Field(default=None, sa_column=Column(Text))
@@ -180,9 +176,7 @@ class Condition(SQLModel, table=True):
         nullable=False
     )
     rule_id: uuid.UUID = Field(
-        foreign_key="rules.id",
-        index=True,
-        nullable=False
+        sa_column=Column(ForeignKey("rules.id", ondelete="CASCADE"), index=True, nullable=False)
     )
     metric: str = Field(nullable=False)
     comparator: str = Field(nullable=False)
@@ -215,19 +209,13 @@ class ConditionEdge(SQLModel, table=True):
         nullable=False
     )
     rule_id: uuid.UUID = Field(
-        foreign_key="rules.id",
-        index=True,
-        nullable=False
+        sa_column=Column(ForeignKey("rules.id", ondelete="CASCADE"), index=True, nullable=False)
     )
     parent_condition_id: uuid.UUID = Field(
-        foreign_key="conditions.id",
-        index=True,
-        nullable=False
+        sa_column=Column(ForeignKey("conditions.id", ondelete="CASCADE"), index=True, nullable=False)
     )
     child_condition_id: uuid.UUID = Field(
-        foreign_key="conditions.id",
-        index=True,
-        nullable=False
+        sa_column=Column(ForeignKey("conditions.id", ondelete="CASCADE"), index=True, nullable=False)
     )
     logical_operator: LogicalOperator = Field(
         sa_column=Column(
@@ -253,14 +241,10 @@ class Session(SQLModel, table=True):
         nullable=False
     )
     user_id: uuid.UUID = Field(
-        foreign_key="users.id",
-        index=True,
-        nullable=False
+        sa_column=Column(ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
     )
     playbook_id: uuid.UUID = Field(
-        foreign_key="playbooks.id",
-        index=True,
-        nullable=False
+        sa_column=Column(ForeignKey("playbooks.id", ondelete="CASCADE"), index=True, nullable=False)
     )
     start_time: datetime = Field(
         sa_column=Column(
@@ -305,9 +289,7 @@ class SessionEvent(SQLModel, table=True):
         nullable=False
     )
     session_id: uuid.UUID = Field(
-        foreign_key="sessions.id",
-        index=True,
-        nullable=False
+        sa_column=Column(ForeignKey("sessions.id", ondelete="CASCADE"), index=True, nullable=False)
     )
     type: SessionEventType = Field(
         sa_column=Column(

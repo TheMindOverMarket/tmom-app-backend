@@ -255,31 +255,11 @@ async def update_playbook(id: uuid.UUID, playbook_in: PlaybookUpdate, db: Sessio
 
 def _delete_playbook_cascading(db: Session, playbook_id: uuid.UUID):
     """
-    Cascading Delete Invariant:
-    Playbook -> Sessions -> SessionEvents
-    Playbook -> Rules -> Conditions -> ConditionEdges
+    Permanently removes a playbook. 
+    Foreign key constraints (ON DELETE CASCADE) handle the cleanup of:
+    - Rules -> Conditions -> Edges
+    - Sessions -> SessionEvents
     """
-    # 1. Cleanup Sessions & Events
-    sessions = db.exec(select(SessionModel).where(SessionModel.playbook_id == playbook_id)).all()
-    for session in sessions:
-        events = db.exec(select(SessionEventModel).where(SessionEventModel.session_id == session.id)).all()
-        for event in events:
-            db.delete(event)
-        db.delete(session)
-    
-    # 2. Cleanup Rules, Conditions & Edges
-    rules = db.exec(select(Rule).where(Rule.playbook_id == playbook_id)).all()
-    for rule in rules:
-        edges = db.exec(select(ConditionEdge).where(ConditionEdge.rule_id == rule.id)).all()
-        for edge in edges:
-            db.delete(edge)
-            
-        conditions = db.exec(select(Condition).where(Condition.rule_id == rule.id)).all()
-        for condition in conditions:
-            db.delete(condition)
-        db.delete(rule)
-        
-    # 3. Finally delete the playbook
     playbook = db.get(Playbook, playbook_id)
     if playbook:
         db.delete(playbook)
