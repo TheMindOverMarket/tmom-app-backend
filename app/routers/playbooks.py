@@ -163,6 +163,36 @@ async def stream_playbook(id: uuid.UUID):
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
+@router.post("/playbooks/preview")
+async def preview_playbook(turn: dict):
+    """
+    Stateless Proxy: Forwards chat_history to Rule Engine for non-persisted logic preview.
+    """
+    target_url = f"{settings.rule_engine_base_url}/api/rules/preview"
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        try:
+            response = await client.post(target_url, json=turn)
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            logger.error(f"[PLAYBOOK][PREVIEW][ERROR] Failed to reach Rule Engine: {str(e)}")
+            raise HTTPException(status_code=500, detail="Rule Engine preview failed.")
+
+@router.post("/playbooks/stream-preview")
+async def stream_preview_playbook(turn: dict):
+    """
+    Stateless SSE Proxy: Streams tokens from Rule Engine without playbook_id.
+    """
+    target_url = f"{settings.rule_engine_base_url}/api/rules/stream"
+    
+    async def event_generator():
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            async with client.stream("POST", target_url, json=turn) as response:
+                async for chunk in response.aiter_bytes():
+                    yield chunk
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
 @router.get("/playbooks/", response_model=List[Playbook])
 async def list_playbooks(user_id: Optional[uuid.UUID] = None, db: Session = Depends(get_session)):
     statement = select(Playbook)
