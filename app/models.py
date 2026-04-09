@@ -16,6 +16,7 @@ class SessionStatus(str, Enum):
 
 class GenerationStatus(str, Enum):
     PENDING = "PENDING"
+    INITIALIZING = "INITIALIZING"
     INCOMPLETE = "INCOMPLETE"
     COMPLETED = "COMPLETED"
     FAILED = "FAILED"

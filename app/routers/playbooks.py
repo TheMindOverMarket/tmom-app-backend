@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlmodel import Session, select
 from sqlalchemy import update as sa_update
+from sqlalchemy.orm.attributes import flag_modified
 from typing import List, Optional, Any
 import uuid
 import logging
@@ -132,6 +133,7 @@ async def chat_playbook(
     history.append({"role": "user", "content": turn.message})
     
     playbook.chat_history = list(history)
+    flag_modified(playbook, "chat_history")
     playbook.generation_status = GenerationStatus.PENDING
     
     db.add(playbook)
@@ -193,6 +195,8 @@ async def update_playbook(id: uuid.UUID, playbook_in: PlaybookUpdate, db: Sessio
 
     for key, value in update_data.items():
         setattr(playbook, key, value)
+        if key in ("chat_history", "context", "session_metadata"):
+            flag_modified(playbook, key)
     
     db.add(playbook)
     db.commit()
