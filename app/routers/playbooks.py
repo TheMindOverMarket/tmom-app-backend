@@ -262,6 +262,25 @@ def _delete_playbook_cascading(db: Session, playbook_id: uuid.UUID):
     """
     playbook = db.get(Playbook, playbook_id)
     if playbook:
+        sessions = db.exec(select(SessionModel).where(SessionModel.playbook_id == playbook_id)).all()
+        for session in sessions:
+            events = db.exec(select(SessionEventModel).where(SessionEventModel.session_id == session.id)).all()
+            for event in events:
+                db.delete(event)
+            db.delete(session)
+
+        rules = db.exec(select(Rule).where(Rule.playbook_id == playbook_id)).all()
+        for rule in rules:
+            edges = db.exec(select(ConditionEdge).where(ConditionEdge.rule_id == rule.id)).all()
+            for edge in edges:
+                db.delete(edge)
+
+            conditions = db.exec(select(Condition).where(Condition.rule_id == rule.id)).all()
+            for condition in conditions:
+                db.delete(condition)
+
+            db.delete(rule)
+
         db.delete(playbook)
 
 @router.delete("/playbooks/{id}", status_code=status.HTTP_204_NO_CONTENT)

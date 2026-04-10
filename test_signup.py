@@ -5,7 +5,7 @@ from app.config import settings
 from app.routers.users import create_user
 from app.schemas import UserCreate
 
-async def test_signup_async():
+async def run_signup_smoke():
     engine = create_engine(settings.database_url)
     user_in = UserCreate(
         email=f"test_{uuid.uuid4().hex[:8]}@example.com",
@@ -26,4 +26,4 @@ async def test_signup_async():
             traceback.print_exc()
 
 if __name__ == "__main__":
-    asyncio.run(test_signup_async())
+    asyncio.run(run_signup_smoke())

@@ -155,11 +155,13 @@ async def execute_mock_trade(trade_req: TradeTriggerRequest):
     """
     import uuid
     import time
+    from datetime import datetime, timezone
     from app.schemas import UserActivityEvent
-    from app.sessions import log_session_event, _active_sessions
+    from app.sessions import log_session_event, _active_sessions, get_user_for_playbook
     from app.models import SessionEventType
 
     order_id = str(uuid.uuid4())
+    timestamp_iso = datetime.fromtimestamp(time.time(), tz=timezone.utc).isoformat().replace("+00:00", "Z")
     
     normalized_event = UserActivityEvent(
         activity_id=str(uuid.uuid4()),
@@ -170,24 +172,41 @@ async def execute_mock_trade(trade_req: TradeTriggerRequest):
         qty=float(trade_req.qty),
         filled_qty=float(trade_req.qty),
         price=100000.0,
+        timestamp=timestamp_iso,
         timestamp_alpaca=time.time() * 1000,
         timestamp_server=time.time() * 1000,
         market_attachment_state="MOCK",
         market_snapshot_id=None,
         market_ref_age_ms=None
     )
-    
-    await activity_broadcaster.broadcast(normalized_event.model_dump_json())
-    logger.info(f"[MOCK_TRADE] Emitted mock user activity for {trade_req.symbol}")
-    
-    for playbook_id in _active_sessions.keys():
+
+    if not _active_sessions:
+        await activity_broadcaster.broadcast(normalized_event.model_dump_json(exclude_none=True))
+        logger.info(f"[MOCK_TRADE] Emitted global mock user activity for {trade_req.symbol}")
+
+    for playbook_id, session_id in _active_sessions.items():
+        user_id = get_user_for_playbook(playbook_id)
+        scoped_event = normalized_event.model_copy(
+            update={
+                "session_id": str(session_id),
+                "user_id": str(user_id) if user_id else None,
+            }
+        )
+
+        await activity_broadcaster.broadcast(
+            scoped_event.model_dump_json(exclude_none=True),
+            user_id=str(user_id) if user_id else None,
+            session_id=str(session_id),
+        )
+
         log_session_event(
             playbook_id=playbook_id,
             event_type=SessionEventType.TRADING,
-            event_data=normalized_event.model_dump(),
+            event_data=scoped_event.model_dump(exclude_none=True),
             event_metadata={"alpaca_event": "mock_fill"}
         )
-        
+    logger.info(f"[MOCK_TRADE] Emitted mock user activity for {trade_req.symbol}")
+
     return TradeTriggerResponse(status="success", order_id=order_id)
 
 @app.get("/health")

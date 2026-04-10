@@ -163,7 +163,7 @@ async def end_session(
     await sync_runtime_from_database()
     
     # 🚀 AUTOMATED RULE ENGINE SHUTDOWN
-    background_tasks.add_task(trigger_session_stop, db_session.playbook_id)
+    background_tasks.add_task(trigger_session_stop, db_session.playbook_id, db_session.id)
     
     return db_session
 

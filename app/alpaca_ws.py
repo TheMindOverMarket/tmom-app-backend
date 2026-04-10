@@ -463,10 +463,17 @@ class AlpacaTradingStream(AlpacaBaseStream):
 
                                     for playbook_id, session_id in _active_sessions.items():
                                         user_id = get_user_for_playbook(playbook_id)
+                                        scoped_event = normalized_event.model_copy(
+                                            update={
+                                                "session_id": str(session_id),
+                                                "user_id": str(user_id) if user_id else None,
+                                            }
+                                        )
+                                        scoped_payload = scoped_event.model_dump(exclude_none=True)
 
                                         # 1. Scoped Broadcast to the specific session/user WebSocket
                                         await activity_broadcaster.broadcast(
-                                            normalized_event.model_dump_json(),
+                                            scoped_event.model_dump_json(exclude_none=True),
                                             user_id=str(user_id) if user_id else None,
                                             session_id=str(session_id)
                                         )
@@ -476,7 +483,7 @@ class AlpacaTradingStream(AlpacaBaseStream):
                                         log_session_event(
                                             playbook_id=playbook_id,
                                             event_type=SessionEventType.TRADING,
-                                            event_data=normalized_event.model_dump(),
+                                            event_data=scoped_payload,
                                             event_metadata={"alpaca_event": event_type}
                                         )
 

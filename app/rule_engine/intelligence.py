@@ -141,35 +141,42 @@ async def trigger_session_execution(playbook_id: uuid.UUID, session_id: uuid.UUI
         "market": symbol,
     }
     
+    execute_started = False
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             logger.info(f"[RULE_ENGINE][EXECUTE] POST {trigger_url} (playbook:{playbook_id}, session:{session_id})")
             response = await client.post(trigger_url, params=params)
             response.raise_for_status()
             logger.info(f"[RULE_ENGINE][EXECUTE][SUCCESS] response: {response.json()}")
+            execute_started = True
     except Exception as e:
         logger.error(f"[RULE_ENGINE][EXECUTE][ERROR] Trigger failed for playbook {playbook_id}: {str(e)}")
+        return False
 
     # 🚦 DEVIATION ENGINE TRIGGER
     if not settings.deviation_engine_base_url:
         logger.warning(
             "[DEVIATION_ENGINE][START][SKIP] deviation_engine_base_url is not configured."
         )
-        return
+        return execute_started
 
     deviation_url = f"{settings.deviation_engine_base_url.rstrip('/')}/deviations/session/start"
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             logger.info(f"[DEVIATION_ENGINE][START] POST {deviation_url} (session:{session_id})")
-            await client.post(deviation_url, params={
+            response = await client.post(deviation_url, params={
                 "session_id": str(session_id),
                 "playbook_id": str(playbook_id),
                 "user_id": str(user_id)
             })
+            response.raise_for_status()
     except Exception as e:
         logger.warning(f"[DEVIATION_ENGINE][START][ERROR] Trigger failed: {str(e)}")
+        return False
 
-async def trigger_session_stop(playbook_id: uuid.UUID):
+    return True
+
+async def trigger_session_stop(playbook_id: uuid.UUID, session_id: uuid.UUID | None = None):
     """
     Called by /sessions/end to shut down rule engine processing
     for a specific strategy.
@@ -204,14 +211,15 @@ async def trigger_session_stop(playbook_id: uuid.UUID):
         )
         return
 
+    if not session_id:
+        logger.warning("[DEVIATION_ENGINE][STOP][SKIP] session_id missing; cannot stop deviation engine cleanly.")
+        return
+
     deviation_url = f"{settings.deviation_engine_base_url.rstrip('/')}/deviations/session/stop"
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            logger.info(f"[DEVIATION_ENGINE][STOP] POST {deviation_url} (session:{playbook_id})")
-            # NOTE: For stop, we usually rely on session_id, but the trigger currently takes session_id
-            # However, trigger_session_stop in backend only has playbook_id. 
-            # We'll need a way to resolve the active session_id if we want to stop it specifically.
-            # For now, we'll log it as a placeholder or assume the engine handles it.
-            pass 
+            logger.info(f"[DEVIATION_ENGINE][STOP] POST {deviation_url} (session:{session_id})")
+            response = await client.post(deviation_url, params={"session_id": str(session_id)})
+            response.raise_for_status()
     except Exception as e:
         logger.warning(f"[DEVIATION_ENGINE][STOP][ERROR] Shutdown failed: {str(e)}")
