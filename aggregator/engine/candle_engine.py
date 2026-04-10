@@ -38,10 +38,18 @@ class CandleEngine:
             last_bar = bars[-1]
             state.update_last_price(last_bar.close)
             state.last_tick_timestamp_ms = int(last_bar.start_time.timestamp() * 1000)
-            
-            # WARM UP VWAP from hydration data
-            state.vwap_total_pv = sum(b.close * b.volume for b in bars)
-            state.vwap_total_v = sum(b.volume for b in bars)
+
+            # Warm the session VWAP using only the current UTC trading day.
+            latest_session_date = last_bar.start_time.astimezone(timezone.utc).date()
+            state.reset_vwap(latest_session_date)
+            for bar in bars:
+                if bar.start_time.astimezone(timezone.utc).date() != latest_session_date:
+                    continue
+                state.add_vwap_sample(
+                    price=bar.close,
+                    volume=bar.volume,
+                    timestamp=bar.start_time,
+                )
             
         # Clear the current candle so the next live tick starts fresh
         state.current_1m_candle = None
@@ -57,9 +65,8 @@ class CandleEngine:
         state.update_last_price(tick.price)
         state.last_tick_timestamp_ms = int(tick.timestamp.timestamp() * 1000)
 
-        # UPDATE SESSION VWAP
-        state.vwap_total_pv += (tick.price * tick.size)
-        state.vwap_total_v += tick.size
+        # UPDATE SESSION VWAP with a UTC day reset boundary
+        state.add_vwap_sample(price=tick.price, volume=tick.size, timestamp=tick.timestamp)
 
         # Truncate to minute
         tick_minute = tick.timestamp.replace(second=0, microsecond=0)

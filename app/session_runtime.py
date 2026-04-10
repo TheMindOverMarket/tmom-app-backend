@@ -129,7 +129,7 @@ async def sync_runtime_from_database() -> dict[str, Any]:
                         high=float(bar.high),
                         low=float(bar.low),
                         close=float(bar.close),
-                        volume=0.0,
+                        volume=float(getattr(bar, "volume", 0.0) or 0.0),
                         start_time=datetime.fromtimestamp(bar.time, tz=timezone.utc),
                     )
                     for bar in market_bars

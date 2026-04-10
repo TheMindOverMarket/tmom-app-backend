@@ -97,7 +97,8 @@ async def get_market_history(
                         open=float(bar["o"]),
                         high=float(bar["h"]),
                         low=float(bar["l"]),
-                        close=float(bar["c"])
+                        close=float(bar["c"]),
+                        volume=float(bar.get("v", 0.0)),
                     ))
                 except (KeyError, ValueError) as e:
                     logger.error(f"[MARKET_DATA] Error parsing bar data: {str(e)}")

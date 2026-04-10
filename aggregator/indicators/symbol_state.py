@@ -1,7 +1,7 @@
 import copy
 from collections import deque
 from typing import Dict, List, Optional, Any
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from aggregator.models import NormalizedBar
 
 class SymbolState:
@@ -48,6 +48,24 @@ class SymbolState:
         # VWAP Tracking (Session start)
         self.vwap_total_pv: float = 0.0
         self.vwap_total_v: float = 0.0
+        self.vwap_session_date: Optional[date] = None
+
+    def reset_vwap(self, session_date: Optional[date] = None):
+        self.vwap_total_pv = 0.0
+        self.vwap_total_v = 0.0
+        self.vwap_session_date = session_date
+
+    def ensure_vwap_session(self, timestamp: datetime):
+        session_date = timestamp.astimezone(timezone.utc).date()
+        if self.vwap_session_date != session_date:
+            self.reset_vwap(session_date)
+
+    def add_vwap_sample(self, *, price: float, volume: float, timestamp: datetime):
+        self.ensure_vwap_session(timestamp)
+        if volume <= 0:
+            return
+        self.vwap_total_pv += price * volume
+        self.vwap_total_v += volume
 
     def update_last_price(self, price: float):
         self.last_price = price
