@@ -15,12 +15,17 @@ from app.models import (
     SessionEventType, GenerationStatus
 )
 from app.schemas import PlaybookCreate, PlaybookUpdate, PlaybookIngest, PlaybookChatTurn
-from app.rule_engine.intelligence import analyze_playbook_execution
 from app.markets import sync_playbook_market_state
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["playbooks"])
+
+
+async def analyze_playbook_execution(playbook_id: uuid.UUID):
+    from app.rule_engine.intelligence import analyze_playbook_execution as _analyze_playbook_execution
+
+    return await _analyze_playbook_execution(playbook_id)
 
 
 def _hydrate_playbook_market_fields(playbook: Playbook) -> Playbook:

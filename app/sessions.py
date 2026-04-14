@@ -23,6 +23,11 @@ _playbook_to_symbol: Dict[uuid.UUID, str] = {}
 _event_queue: asyncio.Queue[Dict[str, Any]] = asyncio.Queue()
 _running = True
 
+
+def start_event_worker() -> None:
+    global _running
+    _running = True
+
 def set_active_session(playbook_id: uuid.UUID, session_id: uuid.UUID, user_id: uuid.UUID, symbol: str):
     _active_sessions[playbook_id] = session_id
     _playbook_to_user[playbook_id] = user_id

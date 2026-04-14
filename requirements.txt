@@ -4,7 +4,6 @@ pydantic
 pydantic-settings
 python-dotenv
 websockets
-alpaca-trade-api
 sqlmodel
 alembic
 psycopg2-binary
@@ -12,8 +11,5 @@ email-validator
 httpx
 TA-Lib
 numpy
-pytest
-pytest-asyncio
-pytest-mock
 bcrypt
 PyJWT

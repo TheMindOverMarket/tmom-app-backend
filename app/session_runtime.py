@@ -58,6 +58,8 @@ async def sync_runtime_from_database() -> dict[str, Any]:
     """
     import app.lifecycle
 
+    app.lifecycle.ensure_runtime_components()
+
     active_symbols: set[str] = set()
     hydrated_symbols: set[str] = set()
     registered_metric_keys: set[tuple[str, str, str]] = set()

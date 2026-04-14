@@ -15,6 +15,10 @@ class Settings(BaseSettings):
     rule_engine_base_url: str = "https://rule-engine-rcg9.onrender.com"
     deviation_engine_base_url: str = ""
 
+    # Runtime feature flags
+    enable_live_market_streams: bool = True
+    enable_runtime_recovery: bool = True
+
     # Auth
     jwt_secret: str = "local-secret-key-change-in-prod"
 

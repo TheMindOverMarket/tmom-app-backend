@@ -2,10 +2,7 @@ import asyncio
 import logging
 from typing import Any, Optional
 from dotenv import load_dotenv
-from app.alpaca_ws import AlpacaCryptoStream, AlpacaTradingStream
-from app.session_runtime import sync_runtime_from_database
-from aggregator.indicators.indicator_registry import IndicatorRegistry
-from aggregator.engine.candle_engine import CandleEngine
+from app.config import settings
 
 load_dotenv()
 
@@ -14,40 +11,77 @@ logger = logging.getLogger(__name__)
 _stream_task: Optional[asyncio.Task] = None
 _trading_stream_task: Optional[asyncio.Task] = None
 _session_worker_task: Optional[asyncio.Task] = None
-_stream: Optional[AlpacaCryptoStream] = None
-_trading_stream: Optional[AlpacaTradingStream] = None
+_stream: Optional[Any] = None
+_trading_stream: Optional[Any] = None
 _startup_issues: list[str] = []
 
 # New Architecture Components
-indicator_registry: IndicatorRegistry = IndicatorRegistry()
-candle_engine: CandleEngine = CandleEngine(indicator_registry)
+indicator_registry: Optional[Any] = None
+candle_engine: Optional[Any] = None
+
+
+def ensure_runtime_components() -> tuple[Any, Any]:
+    """
+    Lazily construct the indicator runtime so cold starts do not eagerly import
+    NumPy / TA-Lib unless a session runtime actually needs them.
+    """
+    global indicator_registry, candle_engine
+
+    if indicator_registry is None or candle_engine is None:
+        from aggregator.indicators.indicator_registry import IndicatorRegistry
+        from aggregator.engine.candle_engine import CandleEngine
+
+        indicator_registry = IndicatorRegistry()
+        candle_engine = CandleEngine(indicator_registry)
+        logger.info("[LIFECYCLE][RUNTIME] Indicator runtime initialized lazily.")
+
+    return indicator_registry, candle_engine
+
+
+async def sync_runtime_from_database() -> dict[str, Any]:
+    from app.session_runtime import sync_runtime_from_database as _sync_runtime_from_database
+
+    return await _sync_runtime_from_database()
 
 
 async def on_startup() -> None:
-    global _stream_task, _stream, _trading_stream_task, _trading_stream, _startup_issues
+    global _stream_task, _stream, _trading_stream_task, _trading_stream, _startup_issues, _session_worker_task
 
     _startup_issues = []
     _stream = None
     _trading_stream = None
 
-    try:
-        _stream = AlpacaCryptoStream()
-        _trading_stream = AlpacaTradingStream()
-    except Exception as exc:
-        issue = f"alpaca_streams_unavailable: {exc}"
-        _startup_issues.append(issue)
-        logger.warning(
-            "[LIFECYCLE][STARTUP] Alpaca stream bootstrap skipped; API will start without live streams: %s",
-            exc,
-        )
+    if settings.enable_live_market_streams:
+        try:
+            from app.alpaca_ws import AlpacaCryptoStream, AlpacaTradingStream
 
-    try:
-        runtime_summary = await sync_runtime_from_database()
-        logger.info(f"[LIFECYCLE][STARTUP] Runtime restored: {runtime_summary}")
-    except Exception as exc:
-        issue = f"runtime_sync_failed: {exc}"
+            _stream = AlpacaCryptoStream()
+            _trading_stream = AlpacaTradingStream()
+        except Exception as exc:
+            issue = f"alpaca_streams_unavailable: {exc}"
+            _startup_issues.append(issue)
+            logger.warning(
+                "[LIFECYCLE][STARTUP] Alpaca stream bootstrap skipped; API will start without live streams: %s",
+                exc,
+            )
+    else:
+        issue = "alpaca_streams_disabled_by_config"
         _startup_issues.append(issue)
-        logger.exception("[LIFECYCLE][STARTUP] Runtime sync failed; continuing with empty in-memory state.")
+        logger.info("[LIFECYCLE][STARTUP] Live Alpaca streams disabled by configuration.")
+
+    if settings.enable_runtime_recovery:
+        try:
+            ensure_runtime_components()
+            runtime_summary = await sync_runtime_from_database()
+            logger.info(f"[LIFECYCLE][STARTUP] Runtime restored: {runtime_summary}")
+        except Exception as exc:
+            issue = f"runtime_sync_failed: {exc}"
+            _startup_issues.append(issue)
+            logger.exception("[LIFECYCLE][STARTUP] Runtime sync failed; continuing with empty in-memory state.")
+    else:
+        issue = "runtime_recovery_disabled_by_config"
+        _startup_issues.append(issue)
+        logger.info("[LIFECYCLE][STARTUP] Runtime recovery disabled by configuration.")
 
     async def run_stream():
         print("Starting AlpacaCryptoStream task")
@@ -65,7 +99,9 @@ async def on_startup() -> None:
         _trading_stream_task = asyncio.create_task(run_trading_stream())
     
     # Start high-performance session logger background worker
-    from app.sessions import process_event_batch_worker
+    from app.sessions import process_event_batch_worker, start_event_worker
+
+    start_event_worker()
     _session_worker_task = asyncio.create_task(process_event_batch_worker())
 
 
