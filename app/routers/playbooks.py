@@ -101,9 +101,12 @@ async def ingest_playbook(
         "symbol": playbook_payload["symbol"],
         "market": playbook_payload["market"],
     }
-    playbook_payload["chat_history"] = [
-        {"role": "user", "content": playbook_in.original_nl_input}
-    ]
+    if playbook_in.chat_history is not None:
+        playbook_payload["chat_history"] = playbook_in.chat_history
+    else:
+        playbook_payload["chat_history"] = [
+            {"role": "user", "content": playbook_in.original_nl_input}
+        ]
     playbook_payload["is_active"] = True
     playbook_payload["generation_status"] = GenerationStatus.PENDING
     playbook = Playbook(**playbook_payload)

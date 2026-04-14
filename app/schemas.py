@@ -329,6 +329,7 @@ class PlaybookIngest(BaseModel):
     symbol: Optional[str] = None
     market: str
     original_nl_input: str
+    chat_history: Optional[List[Dict[str, Any]]] = None
 
     @model_validator(mode="after")
     def normalize_market(self) -> "PlaybookIngest":
