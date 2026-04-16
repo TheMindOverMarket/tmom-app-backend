@@ -18,6 +18,8 @@ class Settings(BaseSettings):
     # Runtime feature flags
     enable_live_market_streams: bool = True
     enable_runtime_recovery: bool = True
+    session_event_queue_maxsize: int = 1000
+    alpaca_ws_max_queue: int = 256
 
     # Auth
     jwt_secret: str = "local-secret-key-change-in-prod"

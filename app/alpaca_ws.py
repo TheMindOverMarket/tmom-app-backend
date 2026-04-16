@@ -13,6 +13,7 @@ import app.lifecycle
 from app.sessions import _active_sessions, get_user_for_playbook, log_session_event
 from app.models import SessionEventType
 from app.schemas import UserActivityEvent
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +43,7 @@ class AlpacaBaseStream:
             ping_timeout=20,
             open_timeout=10,
             close_timeout=5,
-            max_queue=None,
+            max_queue=settings.alpaca_ws_max_queue,
         )
 
     async def authenticate(self) -> None:

@@ -1,4 +1,3 @@
-import copy
 from collections import deque
 from typing import Dict, List, Optional, Any
 from datetime import date, datetime, timezone
@@ -85,6 +84,11 @@ class SymbolState:
         last_5m = self.derived_timeframes["5m"][-1] if self.derived_timeframes["5m"] else None
         prior_5m = self.derived_timeframes["5m"][-2] if len(self.derived_timeframes["5m"]) > 1 else None
         
+        indicator_values = {
+            timeframe: values.copy()
+            for timeframe, values in self.indicator_cache.items()
+        }
+
         return {
             "symbol": self.symbol,
             "last_price": self.last_price,
@@ -102,5 +106,5 @@ class SymbolState:
             "prior_candle_high_5m": prior_5m.high if prior_5m else (last_5m.high if last_5m else self.last_price),
             "prior_candle_low_5m": prior_5m.low if prior_5m else (last_5m.low if last_5m else self.last_price),
 
-            "indicator_values": copy.deepcopy(self.indicator_cache)
+            "indicator_values": indicator_values
         }

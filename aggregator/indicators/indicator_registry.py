@@ -1,5 +1,4 @@
 import logging
-import copy
 import re
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
@@ -198,4 +197,4 @@ class IndicatorRegistry:
 
         # Update cache and history
         symbol_state.indicator_cache[timeframe] = results
-        symbol_state.indicator_history[timeframe].append(copy.deepcopy(results))
+        symbol_state.indicator_history[timeframe].append(results.copy())

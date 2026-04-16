@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from sqlmodel import Session, select
 from app.database import engine
 from app.models import SessionEvent, SessionEventType
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -20,13 +21,28 @@ _symbol_to_users: Dict[str, set[uuid.UUID]] = {}
 _playbook_to_symbol: Dict[uuid.UUID, str] = {}
 
 # High-Performance Logging Queue
-_event_queue: asyncio.Queue[Dict[str, Any]] = asyncio.Queue()
+_event_queue: asyncio.Queue[Dict[str, Any]] = asyncio.Queue(maxsize=settings.session_event_queue_maxsize)
 _running = True
+_dropped_event_count = 0
 
 
 def start_event_worker() -> None:
     global _running
     _running = True
+
+
+def _queue_depth() -> int:
+    return _event_queue.qsize()
+
+
+def _drain_batch(max_items: int) -> list[Dict[str, Any]]:
+    batch: list[Dict[str, Any]] = []
+    while len(batch) < max_items:
+        try:
+            batch.append(_event_queue.get_nowait())
+        except asyncio.QueueEmpty:
+            break
+    return batch
 
 def set_active_session(playbook_id: uuid.UUID, session_id: uuid.UUID, user_id: uuid.UUID, symbol: str):
     _active_sessions[playbook_id] = session_id
@@ -86,15 +102,27 @@ def log_session_event(
     if not session_id:
         return
 
-    # Put into background queue immediately
-    _event_queue.put_nowait({
+    global _dropped_event_count
+
+    queued_event = {
         "session_id": session_id,
         "type": event_type,
         "tick": tick,
         "event_data": event_data,
         "event_metadata": event_metadata,
         "timestamp": datetime.now(timezone.utc)
-    })
+    }
+
+    try:
+        _event_queue.put_nowait(queued_event)
+    except asyncio.QueueFull:
+        _dropped_event_count += 1
+        if _dropped_event_count in {1, 10, 100} or _dropped_event_count % 1000 == 0:
+            logger.warning(
+                "[SESSIONS][WORKER] Event queue full at %s items; dropped %s session events.",
+                _queue_depth(),
+                _dropped_event_count,
+            )
 
 async def process_event_batch_worker():
     """
@@ -108,10 +136,9 @@ async def process_event_batch_worker():
             # 1. Wait for at least one event
             event = await _event_queue.get()
             batch = [event]
-            
+
             # 2. Try to grab more events immediately available (up to 50)
-            while not _event_queue.empty() and len(batch) < 50:
-                batch.append(_event_queue.get_nowait())
+            batch.extend(_drain_batch(max_items=49))
             
             # 3. Flushes the batch in a single transaction
             if batch:
@@ -149,22 +176,25 @@ async def shutdown_event_worker():
     logger.info("[SESSIONS][WORKER] Shutting down. Flushing final items...")
     # Give it one final chance to clear everything
     if not _event_queue.empty():
-        # Process remaining
         while not _event_queue.empty():
             try:
-                event = _event_queue.get_nowait()
+                batch = _drain_batch(max_items=50)
+                if not batch:
+                    break
                 with Session(engine) as db:
-                    new_event = SessionEvent(
-                        session_id=event["session_id"],
-                        type=event["type"],
-                        tick=event["tick"],
-                        event_data=event["event_data"],
-                        event_metadata=event["event_metadata"],
-                        timestamp=event["timestamp"]
-                    )
-                    db.add(new_event)
+                    for event in batch:
+                        new_event = SessionEvent(
+                            session_id=event["session_id"],
+                            type=event["type"],
+                            tick=event["tick"],
+                            event_data=event["event_data"],
+                            event_metadata=event["event_metadata"],
+                            timestamp=event["timestamp"]
+                        )
+                        db.add(new_event)
                     db.commit()
-                _event_queue.task_done()
+                for _ in batch:
+                    _event_queue.task_done()
             except Exception:
                 break
     logger.info("[SESSIONS][WORKER] Shutdown complete.")
