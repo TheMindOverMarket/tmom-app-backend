@@ -4,6 +4,8 @@ from typing import List, Optional
 import uuid
 from datetime import datetime, timezone
 import logging
+import httpx
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -224,6 +226,34 @@ def delete_session_event(event_id: uuid.UUID, db: Session = Depends(get_session)
 def get_session_replay(session_id: uuid.UUID, db: Session = Depends(get_session)):
     query = select(SessionEventModel).where(SessionEventModel.session_id == session_id).order_by(SessionEventModel.timestamp.asc())
     return db.exec(query).all()
+
+@router.post("/{session_id}/explain_deviation")
+async def explain_deviation(session_id: uuid.UUID, event_data: dict, db: Session = Depends(get_session)):
+    """Proxy endpoint to ask Rule Engine to explain a specific deviation event."""
+    db_session = db.get(SessionModel, session_id)
+    if not db_session:
+        raise HTTPException(status_code=404, detail="Session not found")
+        
+    playbook = db.get(Playbook, db_session.playbook_id)
+    if not playbook:
+        raise HTTPException(status_code=404, detail="Playbook not found")
+        
+    rule_engine_url = f"{settings.rule_engine_base_url}/api/rules/explain_deviation"
+    
+    payload = {
+        "playbook_text": playbook.original_nl_input,
+        "event_data": event_data
+    }
+    
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(rule_engine_url, json=payload, timeout=30.0)
+            response.raise_for_status()
+            data = response.json()
+            return data
+    except Exception as e:
+        logger.error(f"Error fetching deviation explanation: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate explanation: {e}")
 
 @router.delete("/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_session(session_id: uuid.UUID, db: Session = Depends(get_session)):
