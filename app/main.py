@@ -135,6 +135,7 @@ def root():
     return {
         "status": "ok",
         "service": "tmom-domain-api",
+        "version": "1.0.5-audit-fix",
         "note": "Domain CRUD operational"
     }
 
