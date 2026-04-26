@@ -25,8 +25,8 @@ MAX_RECONNECT_DELAY_SECONDS = 30.0
 
 class AlpacaBaseStream:
     def __init__(self, url: str) -> None:
-        self._api_key = os.getenv("ALPACA_API_KEY")
-        self._api_secret = os.getenv("ALPACA_API_SECRET")
+        self._api_key = os.getenv("ALPACA_API_KEY") or os.getenv("APCA_API_KEY_ID") or os.getenv("API_KEY")
+        self._api_secret = os.getenv("ALPACA_API_SECRET") or os.getenv("APCA_API_SECRET_KEY") or os.getenv("SECRET_KEY")
         self.ws_url = url
         self._ws = None
         self._running = True

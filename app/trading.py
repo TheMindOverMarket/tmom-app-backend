@@ -24,8 +24,8 @@ async def place_alpaca_order(trade_req: TradeTriggerRequest) -> TradeTriggerResp
     url = f"{BASE_URL}/v2/orders"
     
     headers = {
-        "APCA-API-KEY-ID": settings.alpaca_api_key,
-        "APCA-API-SECRET-KEY": settings.alpaca_api_secret
+        "APCA-API-KEY-ID": settings.apca_api_key,
+        "APCA-API-SECRET-KEY": settings.apca_api_secret
     }
     
     payload = {

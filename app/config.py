@@ -6,6 +6,17 @@ class Settings(BaseSettings):
     environment: str = "local"
     alpaca_api_key: str = ""
     alpaca_api_secret: str = ""
+
+    # Aliases for Render visibility and SDK standard compatibility
+    @property
+    def apca_api_key(self) -> str:
+        import os
+        return self.alpaca_api_key or os.getenv("APCA_API_KEY_ID") or os.getenv("API_KEY") or ""
+
+    @property
+    def apca_api_secret(self) -> str:
+        import os
+        return self.alpaca_api_secret or os.getenv("APCA_API_SECRET_KEY") or os.getenv("SECRET_KEY") or ""
     
     # Database
     database_url: str = ""
