@@ -474,7 +474,7 @@ class MarketStateSnapshot(BaseModel):
 # --- Trade Schemas ---
 
 class TradeTriggerRequest(BaseModel):
-    symbol: str
+    symbol: str = "BTC/USD"
     qty: str = "0.001"
     side: str = "buy"
     type: str = "market"
