@@ -322,3 +322,52 @@ class SessionEvent(SQLModel, table=True):
             nullable=False
         )
     )
+
+class DeviationRecord(SQLModel, table=True):
+    __tablename__ = "deviation_records"
+    
+    id: uuid.UUID = Field(
+        default_factory=uuid.uuid4,
+        primary_key=True,
+        index=True,
+        nullable=False
+    )
+    session_id: uuid.UUID = Field(
+        sa_column=Column(ForeignKey("sessions.id", ondelete="CASCADE"), index=True, nullable=False)
+    )
+    decision_id: Optional[str] = Field(default=None, index=True)
+    compliant_action_id: Optional[str] = Field(default=None)
+    
+    deviation_type: str = Field(nullable=False) # e.g. INVALID_TRADE, MISSING_STOP_LOSS
+    deviation_family: str = Field(nullable=False) # e.g. RISK_VIOLATION, PATTERN_DRIFT
+    
+    severity: str = Field(default="INFO", nullable=False) # INFO, WARNING, SEVERE
+    
+    candidate_cost: Optional[float] = Field(default=None)
+    finalized_cost: Optional[float] = Field(default=None)
+    unauthorized_gain: Optional[float] = Field(default=None)
+    price_delta: Optional[float] = Field(default=None)
+    
+    detected_at: datetime = Field(
+        sa_column=Column(
+            DateTime(timezone=True),
+            server_default=text("CURRENT_TIMESTAMP"),
+            nullable=False
+        )
+    )
+    finalized_at: Optional[datetime] = Field(
+        sa_column=Column(DateTime(timezone=True), nullable=True)
+    )
+    
+    explainability_payload: Optional[Dict[str, Any]] = Field(
+        default=None,
+        sa_column=Column(JSON)
+    )
+    
+    created_at: datetime = Field(
+        sa_column=Column(
+            DateTime(timezone=True),
+            server_default=text("CURRENT_TIMESTAMP"),
+            nullable=False
+        )
+    )
