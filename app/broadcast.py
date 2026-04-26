@@ -11,6 +11,7 @@ class MarketStateBroadcaster:
         self._session_clients: Dict[str, Set[WebSocket]] = defaultdict(set)
         self._lock = asyncio.Lock()
         self._last_message: Optional[str] = None
+        self._last_message_time: float = 0
 
     async def connect(self, websocket: WebSocket, user_id: Optional[str] = None, session_id: Optional[str] = None) -> None:
         await websocket.accept()
@@ -25,7 +26,9 @@ class MarketStateBroadcaster:
             else:
                 self._global_clients.add(websocket)
             
-            if self._last_message:
+            # Freshness Check: Only send the last message if it's < 60s old
+            now = asyncio.get_event_loop().time()
+            if self._last_message and (now - self._last_message_time < 60.0):
                 await websocket.send_text(self._last_message)
 
     async def disconnect(self, websocket: WebSocket, user_id: Optional[str] = None, session_id: Optional[str] = None) -> None:
@@ -51,6 +54,7 @@ class MarketStateBroadcaster:
         """
         if not user_id and not session_id:
             self._last_message = message
+            self._last_message_time = asyncio.get_event_loop().time()
         
         async with self._lock:
             # Collect all unique targets across the hierarchy
