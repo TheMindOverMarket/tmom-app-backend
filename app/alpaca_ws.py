@@ -203,7 +203,7 @@ class AlpacaCryptoStream(AlpacaBaseStream):
         6️⃣ Broadcast Behavior (UNCHANGED FREQUENCY)
         Decoupled broadcast loop running at ~1Hz.
         """
-        from app.main import market_broadcaster
+        from app.broadcast import market_broadcaster
         
         while self._running:
             try:
@@ -460,7 +460,7 @@ class AlpacaTradingStream(AlpacaBaseStream):
                                     logger.info(f"[USER_ACTIVITY][ENRICHED] {normalized_event.model_dump_json()}")
 
                                     # 🚀 ANALYTICS LOGGING & SCOPED BROADCAST
-                                    from app.main import activity_broadcaster
+                                    from app.broadcast import activity_broadcaster
 
                                     if not _active_sessions:
                                         logger.info(f"[ALPACA][TRADE_UPDATE] No active sessions found to receive broadcast for {symbol}")

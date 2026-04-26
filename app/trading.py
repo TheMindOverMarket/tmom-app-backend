@@ -1,4 +1,3 @@
-import requests
 import logging
 from app.config import settings
 from app.schemas import TradeTriggerRequest, TradeTriggerResponse
@@ -19,7 +18,7 @@ async def place_alpaca_order(trade_req: TradeTriggerRequest) -> TradeTriggerResp
     """
     Executes a trade on Alpaca using the provided request parameters.
     """
-    from app.main import activity_broadcaster
+    from app.broadcast import activity_broadcaster
 
     url = f"{BASE_URL}/v2/orders"
     

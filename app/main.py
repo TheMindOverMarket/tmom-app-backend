@@ -116,8 +116,7 @@ async def global_exception_handler(request: Request, exc: Exception):
     )
 
 # Broadcasters for streaming
-market_broadcaster = MarketStateBroadcaster(name="MARKET_STATE")
-activity_broadcaster = MarketStateBroadcaster(name="USER_ACTIVITY")
+from app.broadcast import market_broadcaster, activity_broadcaster
 
 # Include Domain Routers
 app.include_router(users.router)

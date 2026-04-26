@@ -76,9 +76,12 @@ class MarketStateBroadcaster:
                     try:
                         await ws.send_text(message)
                     except Exception:
-                        # Clean up stale connections
                         if session_id:
                             self._session_clients[session_id].discard(ws)
                         if user_id:
                             self._user_clients[user_id].discard(ws)
                         self._global_clients.discard(ws)
+
+# Hierarchical Broadcasters for streaming
+market_broadcaster = MarketStateBroadcaster(name="MARKET_STATE")
+activity_broadcaster = MarketStateBroadcaster(name="USER_ACTIVITY")
