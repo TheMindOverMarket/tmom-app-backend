@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Body
 from sqlmodel import Session, select
 from typing import List, Optional
 import uuid
@@ -228,7 +228,7 @@ def get_session_replay(session_id: uuid.UUID, db: Session = Depends(get_session)
     return db.exec(query).all()
 
 @router.post("/{session_id}/explain_deviation")
-async def explain_deviation(session_id: uuid.UUID, event_data: dict, db: Session = Depends(get_session)):
+async def explain_deviation(session_id: uuid.UUID, event_data: dict = Body(...), db: Session = Depends(get_session)):
     """Proxy endpoint to ask Rule Engine to explain a specific deviation event."""
     db_session = db.get(SessionModel, session_id)
     if not db_session:
