@@ -2,9 +2,12 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
+from typing import Optional
+from fastapi import BackgroundTasks
 from sqlmodel import Session, select
 from app.database import engine
 from app.models import Playbook, GenerationStatus, Rule, Condition
+import app.models
 from app.markets import resolve_playbook_symbol
 
 import httpx
@@ -176,10 +179,10 @@ async def trigger_session_execution(playbook_id: uuid.UUID, session_id: uuid.UUI
 
     return True
 
-async def trigger_session_stop(playbook_id: uuid.UUID, session_id: uuid.UUID | None = None):
+async def trigger_session_stop(playbook_id: uuid.UUID, session_id: uuid.UUID | None = None, background_tasks: Optional[BackgroundTasks] = None):
     """
     Called by /sessions/end to shut down rule engine processing
-    for a specific strategy.
+    for a specific strategy and trigger the final audit.
     """
     with Session(engine) as db:
         playbook = db.get(Playbook, playbook_id)
@@ -205,21 +208,88 @@ async def trigger_session_stop(playbook_id: uuid.UUID, session_id: uuid.UUID | N
         logger.error(f"[RULE_ENGINE][STOP][ERROR] Shutdown failed for playbook {playbook_id}: {str(e)}")
 
     # 🚦 DEVIATION ENGINE SHUTDOWN
-    if not settings.deviation_engine_base_url:
-        logger.warning(
-            "[DEVIATION_ENGINE][STOP][SKIP] deviation_engine_base_url is not configured."
-        )
-        return
+    if settings.deviation_engine_base_url:
+        if session_id:
+            deviation_url = f"{settings.deviation_engine_base_url.rstrip('/')}/deviations/session/stop"
+            try:
+                async with httpx.AsyncClient(timeout=10.0) as client:
+                    logger.info(f"[DEVIATION_ENGINE][STOP] POST {deviation_url} (session:{session_id})")
+                    response = await client.post(deviation_url, params={"session_id": str(session_id)})
+                    response.raise_for_status()
+            except Exception as e:
+                logger.warning(f"[DEVIATION_ENGINE][STOP][ERROR] Shutdown failed: {str(e)}")
+    
+    # 📝 TRIGGER FINAL AUDIT
+    if session_id and background_tasks:
+        background_tasks.add_task(generate_final_audit, session_id)
 
-    if not session_id:
-        logger.warning("[DEVIATION_ENGINE][STOP][SKIP] session_id missing; cannot stop deviation engine cleanly.")
-        return
 
-    deviation_url = f"{settings.deviation_engine_base_url.rstrip('/')}/deviations/session/stop"
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            logger.info(f"[DEVIATION_ENGINE][STOP] POST {deviation_url} (session:{session_id})")
-            response = await client.post(deviation_url, params={"session_id": str(session_id)})
-            response.raise_for_status()
-    except Exception as e:
-        logger.warning(f"[DEVIATION_ENGINE][STOP][ERROR] Shutdown failed: {str(e)}")
+async def generate_final_audit(session_id: uuid.UUID):
+    """
+    Asynchronously builds the 'Report Card' for a completed session.
+    1. Fetches all events from the database.
+    2. Calls Rule Engine /api/rules/session_report_card.
+    3. Updates the session with analysis and marks as audit-ready.
+    """
+    logger.info(f"[AUDIT][START] Generating final audit for session {session_id}")
+    
+    with Session(engine) as db:
+        db_session = db.get(app.models.Session, session_id)
+        if not db_session:
+            return
+            
+        playbook = db.get(Playbook, db_session.playbook_id)
+        if not playbook:
+            return
+
+        # 1. Fetch all events for the session
+        from app.models import SessionEvent
+        events = db.exec(
+            select(SessionEvent).where(SessionEvent.session_id == session_id).order_by(SessionEvent.timestamp.asc())
+        ).all()
+        
+        event_dicts = [
+            {
+                "type": e.type,
+                "timestamp": e.timestamp.isoformat(),
+                "event_data": e.event_data,
+                "tick": e.tick
+            }
+            for e in events
+        ]
+
+        # 2. Call Rule Engine for Report Card
+        audit_url = f"{settings.rule_engine_base_url}/api/rules/session_report_card"
+        payload = {
+            "playbook_text": playbook.original_nl_input,
+            "events": event_dicts
+        }
+
+        try:
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                response = await client.post(audit_url, json=payload)
+                if response.status_code == 200:
+                    audit_data = response.json()
+                    report_card = audit_data.get("report_card")
+                    
+                    if report_card:
+                        logger.info(f"[AUDIT][SUCCESS] Report card generated for {session_id}")
+                        
+                        # 3. Update Session
+                        existing_metadata = db_session.session_metadata or {}
+                        existing_metadata["report_card"] = report_card
+                        db_session.session_metadata = existing_metadata
+                        db_session.is_audit_ready = True
+                        
+                        db.add(db_session)
+                        db.commit()
+                        return
+                    
+                logger.error(f"[AUDIT][ERROR] Rule engine failed to return report card. Status: {response.status_code}")
+        except Exception as e:
+            logger.error(f"[AUDIT][EXCEPTION] Audit generation failed: {e}")
+            
+        # Fallback: Mark as ready even if audit failed so it doesn't stay hidden forever
+        db_session.is_audit_ready = True
+        db.add(db_session)
+        db.commit()

@@ -270,6 +270,7 @@ class Session(SQLModel, table=True):
         default=None, 
         sa_column=Column(JSON)
     )
+    is_audit_ready: bool = Field(default=False, nullable=False)
 
     created_at: datetime = Field(
         sa_column=Column(

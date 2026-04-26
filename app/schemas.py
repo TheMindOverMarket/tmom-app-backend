@@ -494,6 +494,7 @@ class SessionCreate(BaseModel):
 
 class SessionUpdate(BaseModel):
     status: Optional[SessionStatus] = None
+    is_audit_ready: Optional[bool] = None
     session_metadata: Optional[Dict[str, Any]] = None
 
 class SessionRead(BaseModel):
@@ -503,6 +504,7 @@ class SessionRead(BaseModel):
     start_time: datetime
     end_time: Optional[datetime] = None
     status: SessionStatus
+    is_audit_ready: bool
     session_metadata: Optional[Dict[str, Any]] = None
     created_at: datetime
 

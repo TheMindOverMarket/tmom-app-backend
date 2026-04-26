@@ -154,6 +154,10 @@ async def end_session(
     
     db_session.end_time = datetime.now(timezone.utc)
     db_session.status = session_update.status or SessionStatus.COMPLETED
+    
+    if session_update.is_audit_ready is not None:
+        db_session.is_audit_ready = session_update.is_audit_ready
+        
     if session_update.session_metadata:
         db_session.session_metadata = session_update.session_metadata
         
@@ -165,8 +169,34 @@ async def end_session(
     await sync_runtime_from_database()
     
     # 🚀 AUTOMATED RULE ENGINE SHUTDOWN
-    background_tasks.add_task(trigger_session_stop, db_session.playbook_id, db_session.id)
+    background_tasks.add_task(trigger_session_stop, db_session.playbook_id, db_session.id, background_tasks)
     
+    return db_session
+
+@router.patch("/{session_id}", response_model=SessionRead)
+async def update_session(
+    session_id: uuid.UUID,
+    session_update: SessionUpdate,
+    db: Session = Depends(get_session)
+):
+    """
+    Update a session's metadata or status. 
+    Used by background processes to mark sessions as audit-ready.
+    """
+    db_session = db.get(SessionModel, session_id)
+    if not db_session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    if session_update.status:
+        db_session.status = session_update.status
+    if session_update.is_audit_ready is not None:
+        db_session.is_audit_ready = session_update.is_audit_ready
+    if session_update.session_metadata:
+        db_session.session_metadata = session_update.session_metadata
+
+    db.add(db_session)
+    db.commit()
+    db.refresh(db_session)
     return db_session
 
 @router.get("/", response_model=List[SessionRead])
