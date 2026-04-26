@@ -20,8 +20,11 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # Add is_audit_ready column to sessions table
+    # 1. Add is_audit_ready column to sessions table
     op.add_column('sessions', sa.Column('is_audit_ready', sa.Boolean(), nullable=False, server_default=sa.text('false')))
+    
+    # 2. BACKFILL: Mark all existing COMPLETED sessions as audit-ready so they show up in the new tab immediately
+    op.execute("UPDATE sessions SET is_audit_ready = true WHERE status = 'COMPLETED'")
 
 
 def downgrade() -> None:
