@@ -53,6 +53,9 @@ async def start_session(
                 # Cleanup registry and resources
                 remove_active_session(old_session.playbook_id)
                 
+                # SHUT DOWN OLD ENGINE TASKS
+                background_tasks.add_task(trigger_session_stop, old_session.playbook_id, old_session.id)
+                
                 # Cleanup engine state for the symbol
                 old_playbook = db.get(Playbook, old_session.playbook_id)
                 if old_playbook:
