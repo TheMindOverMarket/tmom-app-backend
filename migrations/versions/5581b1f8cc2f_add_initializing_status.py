@@ -21,8 +21,10 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """Upgrade schema."""
-    with op.get_context().autocommit_block():
-        op.execute("ALTER TYPE generation_status_enum ADD VALUE IF NOT EXISTS 'INITIALIZING'")
+    bind = op.get_bind()
+    if bind.dialect.name != 'sqlite':
+        with op.get_context().autocommit_block():
+            op.execute("ALTER TYPE generation_status_enum ADD VALUE IF NOT EXISTS 'INITIALIZING'")
 
 
 def downgrade() -> None:

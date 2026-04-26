@@ -21,10 +21,12 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """Upgrade schema."""
-    # Commit existing transaction to allow ALTER TYPE ... ADD VALUE
-    op.execute("COMMIT")
-    op.execute("ALTER TYPE user_role_enum ADD VALUE IF NOT EXISTS 'TRADER'")
-    op.execute("ALTER TYPE user_role_enum ADD VALUE IF NOT EXISTS 'MANAGER'")
+    # Only execute ALTER TYPE if we are NOT on SQLite
+    bind = op.get_bind()
+    if bind.dialect.name != 'sqlite':
+        op.execute("COMMIT")
+        op.execute("ALTER TYPE user_role_enum ADD VALUE IF NOT EXISTS 'TRADER'")
+        op.execute("ALTER TYPE user_role_enum ADD VALUE IF NOT EXISTS 'MANAGER'")
     
     # Update server default for the role column
     with op.batch_alter_table('users', schema=None) as batch_op:

@@ -1,4 +1,4 @@
-from typing import Set, Optional, Dict
+from typing import Set, Optional, Dict, Union, List
 from fastapi import WebSocket
 import asyncio
 from collections import defaultdict
@@ -45,7 +45,7 @@ class MarketStateBroadcaster:
                 self._global_clients.discard(websocket)
         print(f"[BROADCAST][{self.name}][CLIENT_DISCONNECTED] Client disc. from {session_id or user_id or 'global'} scope")
 
-    async def broadcast(self, message: str, user_id: Optional[str | list[str]] = None, session_id: Optional[str] = None) -> None:
+    async def broadcast(self, message: str, user_id: Optional[Union[str, List[str]]] = None, session_id: Optional[str] = None) -> None:
         """
         Broadcasts a message with hierarchical targeting:
         - If session_id is provided, sends to session-specific clients.
