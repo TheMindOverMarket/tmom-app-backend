@@ -17,7 +17,8 @@ from app.routers import (
     market_data,
     utility,
     sessions,
-    admin
+    admin,
+    deviations
 )
 from app.schemas import TradeTriggerRequest, TradeTriggerResponse
 
@@ -127,6 +128,7 @@ app.include_router(condition_edges.router)
 app.include_router(market_data.router)
 app.include_router(utility.router)
 app.include_router(sessions.router)
+app.include_router(deviations.router)
 app.include_router(admin.router, prefix="/admin")
 
 @app.get("/")
