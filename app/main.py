@@ -140,14 +140,14 @@ def root():
     }
 
 @app.post("/trade", response_model=TradeTriggerResponse, tags=["Trading"])
-def execute_trade(trade_req: TradeTriggerRequest):
+async def execute_trade(trade_req: TradeTriggerRequest):
     """
     Executes a buy or sell on Alpaca. The trade update 
     will flow through the user-activity stream via background websockets.
     """
     from app.trading import place_alpaca_order
 
-    return place_alpaca_order(trade_req)
+    return await place_alpaca_order(trade_req)
 
 @app.post("/mock-trade", response_model=TradeTriggerResponse, tags=["Trading"])
 async def execute_mock_trade(trade_req: TradeTriggerRequest):

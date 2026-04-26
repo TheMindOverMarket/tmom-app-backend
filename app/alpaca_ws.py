@@ -462,8 +462,12 @@ class AlpacaTradingStream(AlpacaBaseStream):
                                     # 🚀 ANALYTICS LOGGING & SCOPED BROADCAST
                                     from app.main import activity_broadcaster
 
+                                    if not _active_sessions:
+                                        print(f"[ALPACA][TRADE_UPDATE] No active sessions found to receive broadcast for {symbol}")
+
                                     for playbook_id, session_id in _active_sessions.items():
                                         user_id = get_user_for_playbook(playbook_id)
+                                        print(f"[ALPACA][TRADE_UPDATE] Matching Trade to Session: {session_id} (PB: {playbook_id}, User: {user_id})")
                                         scoped_event = normalized_event.model_copy(
                                             update={
                                                 "session_id": str(session_id),
