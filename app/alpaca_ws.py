@@ -420,7 +420,7 @@ class AlpacaTradingStream(AlpacaBaseStream):
                                         timestamp_server=time.time() * 1000
                                     )
 
-                                    print(f"[USER_ACTIVITY][NORMALIZED] {normalized_event.model_dump_json()}")
+                                    logger.info(f"[USER_ACTIVITY][NORMALIZED] {normalized_event.model_dump_json()}")
 
                                     # Context Attachment (MD 4 Requirement)
                                     from app.lifecycle import _stream as crypto_stream_instance
@@ -457,17 +457,17 @@ class AlpacaTradingStream(AlpacaBaseStream):
                                     normalized_event.market_snapshot_id = market_snapshot_id
                                     normalized_event.market_ref_age_ms = market_ref_age_ms
 
-                                    print(f"[USER_ACTIVITY][ENRICHED] {normalized_event.model_dump_json()}")
+                                    logger.info(f"[USER_ACTIVITY][ENRICHED] {normalized_event.model_dump_json()}")
 
                                     # 🚀 ANALYTICS LOGGING & SCOPED BROADCAST
                                     from app.main import activity_broadcaster
 
                                     if not _active_sessions:
-                                        print(f"[ALPACA][TRADE_UPDATE] No active sessions found to receive broadcast for {symbol}")
+                                        logger.info(f"[ALPACA][TRADE_UPDATE] No active sessions found to receive broadcast for {symbol}")
 
                                     for playbook_id, session_id in _active_sessions.items():
                                         user_id = get_user_for_playbook(playbook_id)
-                                        print(f"[ALPACA][TRADE_UPDATE] Matching Trade to Session: {session_id} (PB: {playbook_id}, User: {user_id})")
+                                        logger.info(f"[ALPACA][TRADE_UPDATE] Matching Trade to Session: {session_id} (PB: {playbook_id}, User: {user_id})")
                                         scoped_event = normalized_event.model_copy(
                                             update={
                                                 "session_id": str(session_id),

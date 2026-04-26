@@ -13,6 +13,7 @@ import time
 from datetime import datetime, timezone
 from app.schemas import UserActivityEvent
 from app.sessions import _active_sessions, get_user_for_playbook
+import httpx
 
 async def place_alpaca_order(trade_req: TradeTriggerRequest) -> TradeTriggerResponse:
     """
@@ -36,9 +37,10 @@ async def place_alpaca_order(trade_req: TradeTriggerRequest) -> TradeTriggerResp
     }
     
     try:
-        logger.info(f"Sending {trade_req.side} order for {trade_req.qty} {trade_req.symbol} to Alpaca...")
-        # Use requests in thread to avoid blocking loop if needed, but for simplicity:
-        response = requests.post(url, json=payload, headers=headers)
+        logger.info(f"Sending {trade_req.side} order for {trade_req.symbol} to Alpaca...")
+        
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.post(url, json=payload, headers=headers)
         
         if response.status_code == 200:
             order_data = response.json()
@@ -46,7 +48,6 @@ async def place_alpaca_order(trade_req: TradeTriggerRequest) -> TradeTriggerResp
             logger.info(f"Order SUCCESS: {order_id}")
             
             # 🚀 IMMEDIATE BROADCAST TO ENGINE
-            # This ensures deviations are flagged even if Alpaca WS fill is delayed
             timestamp_iso = datetime.fromtimestamp(time.time(), tz=timezone.utc).isoformat().replace("+00:00", "Z")
             
             normalized_event = UserActivityEvent(
