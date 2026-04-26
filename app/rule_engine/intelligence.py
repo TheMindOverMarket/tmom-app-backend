@@ -200,8 +200,8 @@ async def trigger_session_stop(playbook_id: uuid.UUID, session_id: uuid.UUID | N
     
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
-            logger.info(f"[RULE_ENGINE][STOP] GET {stop_url} (playbook:{playbook_id})")
-            response = await client.get(stop_url, params=params)
+            logger.info(f"[RULE_ENGINE][STOP] POST {stop_url} (playbook:{playbook_id})")
+            response = await client.post(stop_url, params=params)
             response.raise_for_status()
             logger.info(f"[RULE_ENGINE][STOP][SUCCESS] response: {response.json()}")
     except Exception as e:
