@@ -244,6 +244,42 @@ def get_session_event(event_id: uuid.UUID, db: Session = Depends(get_session)):
         raise HTTPException(status_code=404, detail="Session event not found")
     return event
 
+@router.patch("/events/{event_id}", response_model=SessionEventRead)
+def update_session_event(
+    event_id: uuid.UUID, 
+    event_update: dict = Body(...), 
+    db: Session = Depends(get_session)
+):
+    """
+    Update a specific session event. 
+    Used by Rule Engine to backfill AI reasoning after generation.
+    """
+    event = db.get(SessionEventModel, event_id)
+    if not event:
+        raise HTTPException(status_code=404, detail="Session event not found")
+    
+    if "event_data" in event_update:
+        # Merge dictionary updates if event_data is provided as partial
+        if isinstance(event_update["event_data"], dict) and isinstance(event.event_data, dict):
+            new_data = dict(event.event_data)
+            new_data.update(event_update["event_data"])
+            event.event_data = new_data
+        else:
+            event.event_data = event_update["event_data"]
+            
+    if "event_metadata" in event_update:
+        if isinstance(event_update["event_metadata"], dict) and isinstance(event.event_metadata, dict):
+            new_meta = dict(event.event_metadata)
+            new_meta.update(event_update["event_metadata"])
+            event.event_metadata = new_meta
+        else:
+            event.event_metadata = event_update["event_metadata"]
+
+    db.add(event)
+    db.commit()
+    db.refresh(event)
+    return event
+
 @router.delete("/events/{event_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_session_event(event_id: uuid.UUID, db: Session = Depends(get_session)):
     """Delete a specific session event."""
