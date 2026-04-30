@@ -1,6 +1,16 @@
-# Market Data Aggregator
+# TheMindOverMarket - Backend Service
 
-Minimal FastAPI service that ingests live market data and streams normalized events downstream.
+This FastAPI service acts as the central data storage and routing hub for TMOM. It manages Playbooks, User Sessions, Deviation Analytics, and proxying historical market data.
+
+## Architecture
+
+The backend primarily provides REST APIs for the frontend to interact with the Supabase PostgreSQL database. It is NOT responsible for real-time live trading loops—that task is delegated to the `Rule-Engine` service.
+
+**Core Endpoints:**
+- `/playbooks`: CRUD and compiling LLM playbooks (via Rule-Engine proxy).
+- `/sessions`: Managing active and completed trading sessions.
+- `/deviations`: Serving deviation records, analytics, and session summaries.
+- `/market-data`: Proxying historical bar data from Alpaca/Binance to the frontend.
 
 ## Running locally
 
@@ -8,31 +18,16 @@ Minimal FastAPI service that ingests live market data and streams normalized eve
 cp .env.example .env
 pip install -r requirements.txt
 alembic upgrade head
-uvicorn app.main:app --reload
+uvicorn app.main:app --reload --port 8000
 ```
 
 Required backend env:
-
-- `DATABASE_URL`
+- `DATABASE_URL` (Supabase Postgres)
 - `ALPACA_API_KEY`
 - `ALPACA_API_SECRET`
-
-The backend uses Alpaca paper endpoints for both order submission and `trade_updates`.
-
-## Paper Trade Smoke Test
-
-With the backend running and env vars loaded, submit a paper order directly:
-
-```bash
-curl -X POST http://localhost:8000/utility/test-alpaca-order \
-  -H 'Content-Type: application/json' \
-  -d '{"symbol":"BTC/USD","qty":"0.001","side":"buy","type":"market","time_in_force":"gtc"}'
-```
-
-For TMOM to ingest and broadcast the resulting trade update into the app, you also need at least one active TMOM session.
+- `RULE_ENGINE_URL` (URL of the local/remote Rule Engine)
 
 ## Health check
 
 Visit:
-
 http://localhost:8000/health
